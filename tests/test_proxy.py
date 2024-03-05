@@ -6,12 +6,14 @@ import uvicorn
 import httpx
 import web3
 
+import cache
 import proxy
+
 from utils import PROXY_URL, fake_upstream, proxy_server
 
 logger = logging.getLogger()
 
-proxy.cache_enable(False)
+cache.cache_enable(False)
 
 def test_get_balance_real_upstream(proxy_server):
     w3 = web3.Web3(web3.HTTPProvider(PROXY_URL + "ethereum"))
