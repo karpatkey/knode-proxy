@@ -1,21 +1,29 @@
+import asyncio
 import enum
-import logging
 import itertools
+import logging
+import os
+import json
+import random
 import time
 
 import anyio
-
 import httpx
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse, JSONResponse
 from starlette.routing import Route
 from web3.middleware.cache import generate_cache_key
+
 from cache import is_cache_enabled, is_cacheable, cache
 
 logger = logging.getLogger()
 
 MAX_UPSTREAM_TRIES_FOR_REQUEST = 5
+MAX_HTTP_CONNECTIONS = 10
+MAX_KEEPALIVE_CONNECTIONS = 10
+
+assert os.path.exists(os.environ.get("KNODE_CFG", ""))
 
 
 class NodeNotHealthy(Exception):
@@ -27,34 +35,59 @@ class NodeStatus(enum.Enum):
     UNHEALTHY = 2
 
 
-httpx_limits = httpx.Limits(max_keepalive_connections=5, max_connections=5)
+httpx_limits = httpx.Limits(max_keepalive_connections=MAX_HTTP_CONNECTIONS, max_connections=MAX_KEEPALIVE_CONNECTIONS)
 
 
 class UpstreamNode:
+    HEALTH_CHECK_INTERVAL_S = 10.
+
     def __init__(self, endpoint: str):
         self.endpoint = endpoint
         self.client = httpx.AsyncClient(limits=httpx_limits)
         self.status: NodeStatus = NodeStatus.HEALTHY
-        self._last_ok_response = None
+        self._last_latency = None
+
+        async def check_loop():
+            while True:
+                await anyio.sleep(self.HEALTH_CHECK_INTERVAL_S + random.random() * self.HEALTH_CHECK_INTERVAL_S / 2)
+                await self.health_check()
+
+        asyncio.create_task(check_loop())
 
     def __str__(self) -> str:
         return f"UpstreamNode({self.endpoint})"
+
+    async def health_check(self):
+        # ask something that won't be already cached by the upstream
+        block = random.randint(1, 100000)
+        data = {'jsonrpc': '2.0',
+                'method': 'eth_getBalance',
+                'params': ['0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693', hex(block)],
+                'id': 0x43a174}
+        start = time.monotonic()
+        try:
+            await self.make_request(data)
+        except Exception:
+            pass
+        self._last_latency = time.monotonic() - start
 
     async def make_request(self, data: dict) -> httpx.Response:
         try:
             response = await self.client.post(self.endpoint, json=data)
         except httpx.HTTPError as exc:
             self.status = NodeStatus.UNHEALTHY
+            logger.warning(f"httpx.HTTPError {repr(exc)} for {self}")
             raise NodeNotHealthy(f"{self} {exc}")
         except anyio.EndOfStream as exc:
             self.status = NodeStatus.UNHEALTHY
+            logger.warning(f"anyio.EndOfStream {exc} for {self}")
             raise NodeNotHealthy(f"{self} {exc}")
 
         if response.status_code != 200:
             self.status = NodeStatus.UNHEALTHY
+            logger.warning(f"status code {response.status_code} != 200 for {self}")
             raise NodeNotHealthy(f"{self} returned status code == {response.status_code}")
         else:
-            self._last_ok_response = time.monotonic()
             self.status = NodeStatus.HEALTHY
         return response
 
@@ -73,17 +106,13 @@ class UpstreamNodeSelector:
         return node
 
 
-# TODO: An independent Health checker that polls every N seconds must be added so that
-# nodes can be bring back to a HEALTHY status after they go into UNHEALTHY
+ENDPOINTS: dict[str, UpstreamNodeSelector] = {}
 
-ENDPOINTS = {
-    "ethereum": UpstreamNodeSelector([
-        UpstreamNode("https://foo"),
-    ]),
-    "gnosis": UpstreamNodeSelector([
-        UpstreamNode("https://rpc.ankr.com/gnosis"),
-    ])
-}
+with open(os.environ.get("KNODE_CFG")) as json_file:
+    config = json.load(json_file)
+
+    for network, endpoints in config['nodes'].items():
+        ENDPOINTS[network] = UpstreamNodeSelector([UpstreamNode(endpoint) for endpoint in endpoints])
 
 
 def get_upstream_node_for_blockchain(blockchain: str) -> UpstreamNode:
@@ -150,4 +179,4 @@ routes = [
 
 app = Starlette(routes=routes)
 
-logger.setLevel(logging.DEBUG)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

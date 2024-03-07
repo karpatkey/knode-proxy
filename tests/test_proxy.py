@@ -1,8 +1,6 @@
 import logging
-import threading
 from unittest.mock import patch
 
-import uvicorn
 import httpx
 import web3
 
