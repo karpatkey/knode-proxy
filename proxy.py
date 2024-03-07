@@ -23,6 +23,8 @@ MAX_UPSTREAM_TRIES_FOR_REQUEST = 5
 MAX_HTTP_CONNECTIONS = 10
 MAX_KEEPALIVE_CONNECTIONS = 10
 
+assert os.path.exists(os.environ.get("KNODE_CFG", ""))
+
 
 class NodeNotHealthy(Exception):
     pass
@@ -104,17 +106,13 @@ class UpstreamNodeSelector:
         return node
 
 
-# TODO: An independent Health checker that polls every N seconds must be added so that
-# nodes can be bring back to a HEALTHY status after they go into UNHEALTHY
+ENDPOINTS: dict[str, UpstreamNodeSelector] = {}
 
-ENDPOINTS = {
-    "ethereum": UpstreamNodeSelector([
-        UpstreamNode("https://foo"),
-    ]),
-    "gnosis": UpstreamNodeSelector([
-        UpstreamNode("https://rpc.ankr.com/gnosis"),
-    ])
-}
+with open(os.environ.get("KNODE_CFG")) as json_file:
+    config = json.load(json_file)
+
+    for network, endpoints in config['nodes'].items():
+        ENDPOINTS[network] = UpstreamNodeSelector([UpstreamNode(endpoint) for endpoint in endpoints])
 
 
 def get_upstream_node_for_blockchain(blockchain: str) -> UpstreamNode:
