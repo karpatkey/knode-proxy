@@ -24,6 +24,9 @@ MAX_HTTP_CONNECTIONS = 10
 MAX_KEEPALIVE_CONNECTIONS = 10
 
 assert os.path.exists(os.environ.get("KNODE_CFG", ""))
+AUTHORIZED_KEYS = os.environ.get("KNODE_AUTHORIZED_KEYS", "").strip()
+if AUTHORIZED_KEYS:
+    AUTHORIZED_KEYS = AUTHORIZED_KEYS.split(",")
 
 
 class NodeNotHealthy(Exception):
@@ -157,6 +160,11 @@ async def make_request(node: UpstreamNode, blockchain: str, data: dict):
 
 async def root(request: Request):
     blockchain = request.path_params['blockchain']
+    if AUTHORIZED_KEYS:
+        key = request.query_params.get("key", "")
+        if key not in AUTHORIZED_KEYS:
+            return JSONResponse(content={}, status_code=403)
+
     if blockchain not in ENDPOINTS:
         return PlainTextResponse(f'No RPC nodes for blockchain: {blockchain}', status_code=404)
 
@@ -180,3 +188,6 @@ routes = [
 app = Starlette(routes=routes)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+if not AUTHORIZED_KEYS:
+    logging.warning("No AUTHORIZED_KEYS configured, everyone with access can use the service!")
