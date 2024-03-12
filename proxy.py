@@ -65,7 +65,11 @@ class UpstreamNode:
                 await anyio.sleep(self.HEALTH_CHECK_INTERVAL_S + random.random() * self.HEALTH_CHECK_INTERVAL_S / 2)
                 await self.health_check()
 
-        asyncio.create_task(check_loop())
+        try:
+            asyncio.get_running_loop()
+            asyncio.create_task(check_loop())
+        except RuntimeError:
+            pass
 
     def __str__(self) -> str:
         return f"UpstreamNode({self.endpoint})"
