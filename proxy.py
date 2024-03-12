@@ -23,7 +23,15 @@ MAX_UPSTREAM_TRIES_FOR_REQUEST = 5
 MAX_HTTP_CONNECTIONS = 10
 MAX_KEEPALIVE_CONNECTIONS = 10
 
-assert os.path.exists(os.environ.get("KNODE_CFG", ""))
+cfg_data = os.environ.get("KNODE_CFG", "")
+if not cfg_data:
+    if os.path.exists(os.environ.get("KNODE_CFG_FILE", "")):
+        cfg_data = open(os.environ.get("KNODE_CFG_FILE")).read()
+    else:
+        raise RuntimeError("KNODE_CFG or KNODE_CFG_FILE must be defined")
+
+config = json.loads(cfg_data)
+
 AUTHORIZED_KEYS = os.environ.get("KNODE_AUTHORIZED_KEYS", "").strip()
 if AUTHORIZED_KEYS:
     AUTHORIZED_KEYS = AUTHORIZED_KEYS.split(",")
@@ -37,6 +45,8 @@ class NodeStatus(enum.Enum):
     HEALTHY = 1
     UNHEALTHY = 2
 
+
+ENDPOINTS: dict[str, "UpstreamNodeSelector"] = {}
 
 httpx_limits = httpx.Limits(max_keepalive_connections=MAX_HTTP_CONNECTIONS, max_connections=MAX_KEEPALIVE_CONNECTIONS)
 
@@ -109,15 +119,6 @@ class UpstreamNodeSelector:
         return node
 
 
-ENDPOINTS: dict[str, UpstreamNodeSelector] = {}
-
-with open(os.environ.get("KNODE_CFG")) as json_file:
-    config = json.load(json_file)
-
-    for network, endpoints in config['nodes'].items():
-        ENDPOINTS[network] = UpstreamNodeSelector([UpstreamNode(endpoint) for endpoint in endpoints])
-
-
 def get_upstream_node_for_blockchain(blockchain: str) -> UpstreamNode:
     try:
         node = ENDPOINTS[blockchain].get_node()
@@ -180,6 +181,10 @@ async def root(request: Request):
         return JSONResponse(content=upstream_data)
     return JSONResponse(content={}, status_code=503)
 
+
+# Load nodes from the config
+for network, endpoints in config['nodes'].items():
+    ENDPOINTS[network] = UpstreamNodeSelector([UpstreamNode(endpoint) for endpoint in endpoints])
 
 routes = [
     Route("/{blockchain}", endpoint=root, methods=["POST"]),
