@@ -23,16 +23,16 @@ MAX_UPSTREAM_TRIES_FOR_REQUEST = 5
 MAX_HTTP_CONNECTIONS = 10
 MAX_KEEPALIVE_CONNECTIONS = 10
 
-cfg_data = os.environ.get("KNODE_CFG", "")
+cfg_data = os.environ.get("KPROXY_NODE_CFG", "")
 if not cfg_data:
-    if os.path.exists(os.environ.get("KNODE_CFG_FILE", "")):
-        cfg_data = open(os.environ.get("KNODE_CFG_FILE")).read()
+    if os.path.exists(os.environ.get("KPROXY_NODE_CFG_FILE", "")):
+        cfg_data = open(os.environ.get("KPROXY_NODE_CFG_FILE")).read()
     else:
-        raise RuntimeError("KNODE_CFG or KNODE_CFG_FILE must be defined")
+        raise RuntimeError("KPROXY_NODE_CFG or KPROXY_NODE_CFG_FILE must be defined")
 
 config = json.loads(cfg_data)
 
-AUTHORIZED_KEYS = os.environ.get("KNODE_AUTHORIZED_KEYS", "").strip()
+AUTHORIZED_KEYS = os.environ.get("KPROXY_AUTHORIZED_KEYS", "").strip()
 if AUTHORIZED_KEYS:
     AUTHORIZED_KEYS = AUTHORIZED_KEYS.split(",")
 

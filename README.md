@@ -14,11 +14,11 @@ You must configure an upstream HTTPS server (nginx, caddy, etc).
 
 Use one of the following env variables:
 
-`KNODE_CFG='{"nodes": {"ethereum": [https://foo, https://bar], "gnosis": ...}}'`
+`KPROXY_NODE_CFG='{"nodes": {"ethereum": [https://foo, https://bar], "gnosis": ...}}'`
 
 or
 
-`KNODE_CFG_FILE=path/to/file.json`
+`KPROXY_NODE_CFG_FILE=path/to/file.json`
 
 #### Authorized keys
 
@@ -27,7 +27,7 @@ authorization key.
 
 Pass an env variable with the authorized keys in the following format when running the service:
 
-`KNODE_AUTHORIZED_KEYS=my-secret-key1,my-secret-key2`
+`KPROXY_AUTHORIZED_KEYS=my-secret-key1,my-secret-key2`
 
 Then access the node as foolows:
 
