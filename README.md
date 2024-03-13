@@ -31,4 +31,15 @@ Pass an env variable with the authorized keys in the following format when runni
 
 Then access the node as foolows:
 
-`https://mynode.com?key=my-secret-key1`
+`https://mynode.com/ethereum?key=my-secret-key1`
+
+### Cache
+
+To speed up the responses, and to relieve the upstream servers, knode-proxy caches some responses that
+are expected to be constant. For example the balance of a wallet at a specific block, etc.
+
+There are two env variables to control the cache.
+
+`KPROXY_CACHE_DIR` to select where is stored the cache. This variable should be specified
+
+`KPROXY_CACHE_DISABLE` to entirely disable the cache.
