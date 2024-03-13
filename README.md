@@ -40,6 +40,7 @@ are expected to be constant. For example the balance of a wallet at a specific b
 
 There are two env variables to control the cache.
 
-`KPROXY_CACHE_DIR` to select where is stored the cache. This variable should be specified
+`KPROXY_CACHE_DIR` to select where is stored the cache.
+When deploying with docker take care to use a volume so the cache is not lost on restarts.
 
 `KPROXY_CACHE_DISABLE` to entirely disable the cache.
