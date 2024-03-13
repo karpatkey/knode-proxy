@@ -6,7 +6,7 @@ RPC endpoint requests single point of entry and management system.
 
 Build the docker image and run it. It will listen in http://127.0.0.1:8888
 
-You must configure an upstream HTTPS server (nginx, caddy, etc).
+To deploy in production you must configure an upstream HTTPS server (nginx, caddy, etc).
 
 ### Config
 
