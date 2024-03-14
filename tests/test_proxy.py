@@ -43,25 +43,9 @@ def test_get_balance(proxy_server, fake_upstream):
 def test_with_fake_node_500_error(proxy_server, fake_upstream):
     with patch.object(proxy, "get_upstream_node_for_blockchain", lambda b: fake_upstream.node):
         req_id = 22
-        fake_upstream.add_responses([
-            ({'jsonrpc': '2.0', 'id': req_id, 'error': {"code": -32003, "message": "Transaction rejected"}}, 500)
-        ])
-
-        response = httpx.post(PROXY_URL + "ethereum",
-                              json={'jsonrpc': '2.0', 'method': 'eth_getBalance',
-                                    'params': ['0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693', '0x1272619'], 'id': req_id})
-
-        assert response.status_code == 200
-        assert response.json()["error"]["code"] == 502
-        assert response.json()["id"] == req_id
-
-
-def test_with_fake_node_200_error(proxy_server, fake_upstream):
-    with patch.object(proxy, "get_upstream_node_for_blockchain", lambda b: fake_upstream.node):
-        req_id = 22
-        fake_upstream.add_responses([
-            ({'jsonrpc': '2.0', 'id': req_id, 'error': {"code": -32003, "message": "Transaction rejected"}}, 500)
-        ])
+        fake_upstream.set_default_response(
+            {'jsonrpc': '2.0', 'id': req_id, 'error': {"code": -32003, "message": "Transaction rejected"}},
+            500)
 
         response = httpx.post(PROXY_URL + "ethereum",
                               json={'jsonrpc': '2.0', 'method': 'eth_getBalance',

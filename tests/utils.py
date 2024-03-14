@@ -41,6 +41,7 @@ class UvicornThreadedServer(uvicorn.Server):
 class FakeUpstreamNode:
     def __init__(self, port, log_level='info'):
         self.fake_data_q = queue.Queue()
+        self.fake_default_response = ({}, 500)
         routes = [
             Route("/", endpoint=self.fake_node_root, methods=["POST"]),
         ]
@@ -49,15 +50,28 @@ class FakeUpstreamNode:
         self.server = UvicornThreadedServer(config=config)
         self.node = proxy.UpstreamNode(FAKE_UPSTREAM_NODE_URL)
 
+
     async def fake_node_root(self, request):
         data = await request.json()
-        upstream_data, status_code = self.fake_data_q.get(block=False)
+        try:
+            upstream_data, status_code = self.fake_data_q.get(block=False)
+        except queue.Empty:
+            upstream_data, status_code = self.fake_default_response
         logger.debug(f"Fake node: {upstream_data}, {status_code}")
         return JSONResponse(content=upstream_data, status_code=status_code)
 
     def add_responses(self, responses: list):
+        """Add a list of responses that will be answered by the node"""
         for response in responses:
             self.fake_data_q.put(response)
+
+    def set_default_response(self, data, status_code):
+        """Set a default response.
+
+        It will be answered when there are no more responses available
+        to respond that were queued by calls to add_responses().
+        """
+        self.fake_default_response = (data, status_code)
 
 
 @pytest.fixture(scope="session")
