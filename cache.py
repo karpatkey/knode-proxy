@@ -1,5 +1,10 @@
+import collections.abc
+import hashlib
 import logging
+import numbers
 import os
+from types import NoneType
+
 import diskcache
 
 logger = logging.getLogger()
@@ -51,6 +56,25 @@ def is_cacheable(method, params):
     if method in {"eth_chainId", "eth_getCode"}:  # TODO: eth_getCode may change for the same block?
         do_cache = True
     return do_cache
+
+
+def generate_cache_key(value) -> str:
+    # Inspired from web3.middleware.cache.generate_cache_key
+
+    if isinstance(value, (bytes, bytearray)):
+        return hashlib.md5(value).hexdigest()
+    elif isinstance(value, str):
+        return generate_cache_key(value.encode("utf-8"))
+    elif isinstance(value, (bool, NoneType, numbers.Number)):
+        return generate_cache_key(repr(value))
+    elif isinstance(value, collections.abc.Mapping):
+        return generate_cache_key(((key, value[key]) for key in sorted(value.keys())))
+    elif isinstance(value, (collections.abc.Sequence, collections.abc.Generator)):
+        return generate_cache_key("".join((generate_cache_key(item) for item in value)))
+    else:
+        raise TypeError(
+            f"Cannot generate cache key for value {value} of type {type(value)}"
+        )
 
 
 check_version()

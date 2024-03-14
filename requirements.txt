@@ -1,5 +1,4 @@
 starlette>=0.37.1
 uvicorn[standard]
 httpx
-web3
 diskcache

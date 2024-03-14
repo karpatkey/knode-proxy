@@ -11,11 +11,10 @@ import anyio
 import httpx
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import PlainTextResponse, JSONResponse
+from starlette.responses import JSONResponse
 from starlette.routing import Route
-from web3.middleware.cache import generate_cache_key
 
-from cache import is_cache_enabled, is_cacheable, cache
+from cache import is_cache_enabled, is_cacheable, cache, generate_cache_key
 
 logger = logging.getLogger()
 
@@ -132,7 +131,6 @@ def get_upstream_node_for_blockchain(blockchain: str) -> UpstreamNode:
 
 
 async def make_request(node: UpstreamNode, blockchain: str, data: dict):
-    logging.info(f"data: {data}")
     method = data['method']
     params = data.get('params', [])
 
@@ -142,7 +140,7 @@ async def make_request(node: UpstreamNode, blockchain: str, data: dict):
     cache_key = f"{blockchain}.{method}.{params_hash}"
     if cache_key not in cache or not is_cache_enabled():
         upstream_response = await node.make_request(data)
-        logger.info(f"upstream status code {upstream_response.status_code}")
+        logger.debug(f"upstream status code {upstream_response.status_code}")
         resp_data = upstream_response.json()
 
         if is_cacheable(method, params) and is_cache_enabled():
@@ -163,27 +161,36 @@ async def make_request(node: UpstreamNode, blockchain: str, data: dict):
         return {"jsonrpc": "2.0", "id": 11, key: data}
 
 
+def error_response(request_data, code, message, data=None):
+    resp = {"jsonrpc": "2.0", "id": request_data["id"], "error": {"code": code, "message": message}}
+    if data is not None:
+        resp["error"]["data"] = data
+    return JSONResponse(content=resp)
+
+
 async def root(request: Request):
-    blockchain = request.path_params['blockchain']
+    request_data = await request.json()
     if AUTHORIZED_KEYS:
         key = request.query_params.get("key", "")
         if key not in AUTHORIZED_KEYS:
-            return JSONResponse(content={}, status_code=403)
+            return error_response(request_data, code=401, message="Unauthorized")
+
+    blockchain = request.path_params['blockchain']
 
     if blockchain not in ENDPOINTS:
-        return PlainTextResponse(f'No RPC nodes for blockchain: {blockchain}', status_code=404)
+        return error_response(request_data, code=404, message=f"No RPC nodes for blockchain {blockchain}")
 
-    data = await request.json()
     for upstream_try in range(MAX_UPSTREAM_TRIES_FOR_REQUEST):
         node = get_upstream_node_for_blockchain(blockchain)
-        logger.info(f"Get request for '{blockchain}' to {node.endpoint}, try {upstream_try}, with data: {data}")
+        logger.info(f"Get request for '{blockchain}' to {node.endpoint}, try {upstream_try}, with data: {request_data!s:.100}")
         try:
-            upstream_data = await make_request(node, blockchain, data)
+            upstream_data = await make_request(node, blockchain, request_data)
+            upstream_data["id"] = request_data["id"]
         except NodeNotHealthy:
             continue
-        logger.info(f"Response for '{blockchain}' with data: {upstream_data}")
+        logger.info(f"Response for '{blockchain}' with data: {upstream_data!s:.100}")
         return JSONResponse(content=upstream_data)
-    return JSONResponse(content={}, status_code=503)
+    return error_response(request_data, code=502, message="Can't get a good response from upstream nodes")
 
 
 # Load nodes from the config
