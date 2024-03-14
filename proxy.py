@@ -13,9 +13,8 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
-from web3.middleware.cache import generate_cache_key
 
-from cache import is_cache_enabled, is_cacheable, cache
+from cache import is_cache_enabled, is_cacheable, cache, generate_cache_key
 
 logger = logging.getLogger()
 
