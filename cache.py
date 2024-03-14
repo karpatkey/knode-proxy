@@ -7,7 +7,7 @@ from types import NoneType
 
 import diskcache
 
-logger = logging.getLogger()
+logger = logging.getLogger("proxy.cache")
 
 VERSION = 1
 VERSION_CACHE_KEY = "VERSION"
