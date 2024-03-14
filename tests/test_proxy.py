@@ -13,6 +13,7 @@ logger = logging.getLogger()
 
 cache.cache_enable(False)
 
+
 def test_get_balance_real_upstream(proxy_server):
     w3 = web3.Web3(web3.HTTPProvider(PROXY_URL + "ethereum"))
 
@@ -51,7 +52,21 @@ def test_with_fake_node_500_error(proxy_server, fake_upstream):
                               json={'jsonrpc': '2.0', 'method': 'eth_getBalance',
                                     'params': ['0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693', '0x1272619'], 'id': 1})
 
-        assert response.status_code == 503
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] == 502
+
+def test_with_fake_node_200_error(proxy_server, fake_upstream):
+    with patch.object(proxy, "get_upstream_node_for_blockchain", lambda b: fake_upstream.node):
+        fake_upstream.add_responses([
+            ({'jsonrpc': '2.0', 'id': 1, 'error': {"code": -32003, "message": "Transaction rejected"}}, 500)
+        ])
+
+        response = httpx.post(PROXY_URL + "ethereum",
+                              json={'jsonrpc': '2.0', 'method': 'eth_getBalance',
+                                    'params': ['0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693', '0x1272619'], 'id': 1})
+
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] == 502
 
 
 def test_upstream_node_selector():
