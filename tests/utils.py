@@ -5,6 +5,7 @@ import threading
 import time
 
 import pytest
+import web3
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -73,3 +74,13 @@ def fake_upstream():
     with fake_upstream_node.server.run_in_thread():
         fake_upstream_node.fake_data_q.queue.clear()
         yield fake_upstream_node
+
+
+def get_node(url):
+    class HTTPProviderNoRetry(web3.HTTPProvider):
+        # disable the retry middleware
+        _middlewares = tuple()
+
+    provider = HTTPProviderNoRetry(url)
+    w3 = web3.Web3(provider)
+    return w3

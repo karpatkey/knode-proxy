@@ -2,12 +2,10 @@ import logging
 from unittest.mock import patch
 
 import httpx
-import web3
 
 import cache
 import proxy
-
-from utils import PROXY_URL, fake_upstream, proxy_server
+from tests.utils import PROXY_URL, fake_upstream, proxy_server, get_node
 
 logger = logging.getLogger()
 
@@ -15,7 +13,7 @@ cache.cache_enable(False)
 
 
 def test_get_balance_real_upstream(proxy_server):
-    w3 = web3.Web3(web3.HTTPProvider(PROXY_URL + "ethereum"))
+    w3 = get_node(PROXY_URL + "ethereum")
 
     # {'jsonrpc': '2.0', 'method': 'eth_getBalance', 'params': ['0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693', '0x1272617'], 'id': 1}
     balance = w3.eth.get_balance("0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693", block_identifier=19342871)
@@ -23,13 +21,13 @@ def test_get_balance_real_upstream(proxy_server):
 
 
 def test_chain_id_real_upstream(proxy_server):
-    w3 = web3.Web3(web3.HTTPProvider(PROXY_URL + "ethereum"))
+    w3 = get_node(PROXY_URL + "ethereum")
     assert w3.eth.chain_id == 1
 
 
 def test_get_balance(proxy_server, fake_upstream):
     with patch.object(proxy, "get_upstream_node_for_blockchain", lambda b: fake_upstream.node):
-        w3 = web3.Web3(web3.HTTPProvider(PROXY_URL + "ethereum"))
+        w3 = get_node(PROXY_URL + "ethereum")
 
         fake_upstream.add_responses([
             ({'jsonrpc': '2.0', 'id': 1, 'result': '0x1'}, 200),
