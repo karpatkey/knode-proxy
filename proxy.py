@@ -163,8 +163,8 @@ async def make_request(node: UpstreamNode, blockchain: str, data: dict):
         return {"jsonrpc": "2.0", "id": 11, key: data}
 
 
-def error_response(request_id, code, message, data=None):
-    resp = {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
+def error_response(request_data, code, message, data=None):
+    resp = {"jsonrpc": "2.0", "id": request_data["id"], "error": {"code": code, "message": message}}
     if data is not None:
         resp["error"]["data"] = data
     return JSONResponse(content=resp)
@@ -172,27 +172,27 @@ def error_response(request_id, code, message, data=None):
 
 async def root(request: Request):
     request_data = await request.json()
-    request_id = request_data['id']
     if AUTHORIZED_KEYS:
         key = request.query_params.get("key", "")
         if key not in AUTHORIZED_KEYS:
-            return error_response(request_id, code=401, message="Unauthorized")
+            return error_response(request_data, code=401, message="Unauthorized")
 
     blockchain = request.path_params['blockchain']
 
     if blockchain not in ENDPOINTS:
-        return error_response(request_id, code=404, message=f"No RPC nodes for blockchain {blockchain}")
+        return error_response(request_data, code=404, message=f"No RPC nodes for blockchain {blockchain}")
 
     for upstream_try in range(MAX_UPSTREAM_TRIES_FOR_REQUEST):
         node = get_upstream_node_for_blockchain(blockchain)
         logger.info(f"Get request for '{blockchain}' to {node.endpoint}, try {upstream_try}, with data: {request_data}")
         try:
             upstream_data = await make_request(node, blockchain, request_data)
+            upstream_data["id"] = request_data["id"]
         except NodeNotHealthy:
             continue
         logger.info(f"Response for '{blockchain}' with data: {upstream_data}")
         return JSONResponse(content=upstream_data)
-    return error_response(request_id, code=502, message="Can't get a good response from upstream nodes")
+    return error_response(request_data, code=502, message="Can't get a good response from upstream nodes")
 
 
 # Load nodes from the config
