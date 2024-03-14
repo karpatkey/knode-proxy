@@ -131,7 +131,6 @@ def get_upstream_node_for_blockchain(blockchain: str) -> UpstreamNode:
 
 
 async def make_request(node: UpstreamNode, blockchain: str, data: dict):
-    logging.info(f"data: {data}")
     method = data['method']
     params = data.get('params', [])
 
@@ -141,7 +140,7 @@ async def make_request(node: UpstreamNode, blockchain: str, data: dict):
     cache_key = f"{blockchain}.{method}.{params_hash}"
     if cache_key not in cache or not is_cache_enabled():
         upstream_response = await node.make_request(data)
-        logger.info(f"upstream status code {upstream_response.status_code}")
+        logger.debug(f"upstream status code {upstream_response.status_code}")
         resp_data = upstream_response.json()
 
         if is_cacheable(method, params) and is_cache_enabled():
@@ -183,13 +182,13 @@ async def root(request: Request):
 
     for upstream_try in range(MAX_UPSTREAM_TRIES_FOR_REQUEST):
         node = get_upstream_node_for_blockchain(blockchain)
-        logger.info(f"Get request for '{blockchain}' to {node.endpoint}, try {upstream_try}, with data: {request_data}")
+        logger.info(f"Get request for '{blockchain}' to {node.endpoint}, try {upstream_try}, with data: {request_data!s:.100}")
         try:
             upstream_data = await make_request(node, blockchain, request_data)
             upstream_data["id"] = request_data["id"]
         except NodeNotHealthy:
             continue
-        logger.info(f"Response for '{blockchain}' with data: {upstream_data}")
+        logger.info(f"Response for '{blockchain}' with data: {upstream_data!s:.100}")
         return JSONResponse(content=upstream_data)
     return error_response(request_data, code=502, message="Can't get a good response from upstream nodes")
 
