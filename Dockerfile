@@ -14,4 +14,4 @@ COPY . .
 
 RUN pip install --break-system-packages -r requirements.txt
 
-CMD ["uvicorn", "proxy:app", "--host=127.0.0.1", "--port=8888"]
+CMD ["python3", "proxy.py"]
