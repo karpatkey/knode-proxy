@@ -321,5 +321,4 @@ if __name__ == "__main__":
             },
         },
     }
-    print(logger)
     uvicorn.run(app, port=8888, log_level="info", log_config=log_cfg)
