@@ -44,3 +44,7 @@ There are two env variables to control the cache.
 When deploying with docker take care to use a volume so the cache is not lost on restarts.
 
 `KPROXY_CACHE_DISABLE` to entirely disable the cache.
+
+### Metrics
+
+A prometheus http server with metrics will listen in http://127.0.0.1:9999

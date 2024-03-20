@@ -2,3 +2,4 @@ starlette>=0.37.1
 uvicorn[standard]
 httpx
 diskcache
+prometheus_client
