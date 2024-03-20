@@ -213,11 +213,16 @@ async def root(request: Request):
     return error_response(request_data, code=502, message="Can't get a good response from upstream nodes")
 
 
+async def status(request: Request):
+    return JSONResponse(content={"status": "ok"})
+
+
 # Load nodes from the config
 for network, endpoints in config['nodes'].items():
     ENDPOINTS[network] = UpstreamNodeSelector([UpstreamNode(endpoint) for endpoint in endpoints])
 
 routes = [
+    Route("/status", endpoint=status, methods=["GET"]),
     Route("/{blockchain}", endpoint=root, methods=["POST"]),
 ]
 
@@ -316,5 +321,4 @@ if __name__ == "__main__":
             },
         },
     }
-    print(logger)
     uvicorn.run(app, port=8888, log_level="info", log_config=log_cfg)

@@ -55,6 +55,10 @@ def test_with_fake_node_500_error(proxy_server, fake_upstream):
         assert response.json()["error"]["code"] == 502
         assert response.json()["id"] == req_id
 
+def test_get_status(proxy_server):
+    response = httpx.get(PROXY_URL + "status")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
 
 def test_upstream_node_selector():
     node_a = proxy.UpstreamNode("a")
