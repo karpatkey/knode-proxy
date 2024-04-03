@@ -281,8 +281,10 @@ if __name__ == "__main__":
     if not AUTHORIZED_KEYS:
         logging.warning("No AUTHORIZED_KEYS configured, everyone with access can use the service!")
 
-    logger.info("Prometheus metrics HTTP running on http://127.0.0.1:9999")
-    metrics.start_http_server(addr="127.0.0.1", port=9999)
+    HOST = os.environ.get("KPROXY_HOST", "127.0.0.1")
+
+    logger.info(f"Prometheus metrics HTTP running on http://{HOST}:9999")
+    metrics.start_http_server(addr=HOST, port=9999)
 
     # TODO: in depth review of the logging config
     log_cfg = {
@@ -321,4 +323,4 @@ if __name__ == "__main__":
             },
         },
     }
-    uvicorn.run(app, port=8888, log_level="info", log_config=log_cfg)
+    uvicorn.run(app, host=HOST, port=8888, log_level="info", log_config=log_cfg)
