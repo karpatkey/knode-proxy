@@ -11,7 +11,7 @@ logger = logging.getLogger("proxy.cache")
 
 VERSION = 1
 VERSION_CACHE_KEY = "VERSION"
-MIN_FILE_SIZE_BYTES = 250 * 1024 * 1024
+MIN_FILE_SIZE_BYTES = 64 * 1024
 EVICTION_POLICY = "least-recently-used"
 SIZE_LIMIT = int(os.environ.get("KPROXY_CACHE_SIZE_MB", "250")) * 1024 * 1024
 
