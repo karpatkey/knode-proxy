@@ -222,6 +222,12 @@ async def status(request: Request):
     return JSONResponse(content={"status": "ok"})
 
 
+@requires('authenticated')
+async def cache_clear(request: Request):
+    cache.clear()
+    return JSONResponse(content={"status": "ok"})
+
+
 # Load nodes from the config
 for network, endpoints in config['nodes'].items():
     ENDPOINTS[network] = UpstreamNodeSelector([UpstreamNode(endpoint) for endpoint in endpoints])
@@ -229,6 +235,7 @@ for network, endpoints in config['nodes'].items():
 routes = [
     Route("/status", endpoint=status, methods=["GET"]),
     Route("/chain/{blockchain}", endpoint=node_rpc, methods=["POST"]),
+    Route("/cache/clear", endpoint=cache_clear, methods=["POST"]),
 ]
 
 class QueryAuthBackend(AuthenticationBackend):
