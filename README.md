@@ -47,4 +47,9 @@ When deploying with docker take care to use a volume so the cache is not lost on
 
 ### Metrics
 
-A prometheus http server with metrics will listen in http://127.0.0.1:9999
+A prometheus http server with metrics will listen in `http://${HOST}:9999`
+
+### Host config
+
+By default the service will listen in 127.0.0.1.
+To change it use `KPROXY_HOST` env variable, for example `KPROXY_HOST="0.0.0.0"`.
