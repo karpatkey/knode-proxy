@@ -169,8 +169,12 @@ def set_metric_ctx(request, key, value):
     request.scope["metrics_ctx"][key] = value
 
 
-async def root(request: Request):
-    request_data = await request.json()
+async def node_rpc(request: Request):
+    try:
+        request_data = await request.json()
+    except json.JSONDecodeError:
+        return error_response({"id": None}, code=-32700, message="Parse error")
+
     if AUTHORIZED_KEYS:
         key = request.query_params.get("key", "")
         if key not in AUTHORIZED_KEYS:
@@ -222,7 +226,7 @@ for network, endpoints in config['nodes'].items():
 
 routes = [
     Route("/status", endpoint=status, methods=["GET"]),
-    Route("/{blockchain}", endpoint=root, methods=["POST"]),
+    Route("/{blockchain}", endpoint=node_rpc, methods=["POST"]),
 ]
 
 
