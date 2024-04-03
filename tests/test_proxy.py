@@ -2,10 +2,11 @@ import logging
 from unittest.mock import patch
 
 import httpx
+import pytest
 
 import cache
 import proxy
-from tests.utils import PROXY_URL, fake_upstream, proxy_server, get_proxy_eth_node
+from tests.utils import PROXY_URL, fake_upstream, proxy_server, get_node, get_proxy_eth_node
 
 logger = logging.getLogger()
 
@@ -47,7 +48,7 @@ def test_with_fake_node_500_error(proxy_server, fake_upstream):
             {'jsonrpc': '2.0', 'id': req_id, 'error': {"code": -32003, "message": "Transaction rejected"}},
             500)
 
-        response = httpx.post(PROXY_URL + "chain/ethereum",
+        response = httpx.post(PROXY_URL + "chain/ethereum?key=test-user",
                               json={'jsonrpc': '2.0', 'method': 'eth_getBalance',
                                     'params': ['0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693', '0x1272619'], 'id': req_id})
 
@@ -55,10 +56,26 @@ def test_with_fake_node_500_error(proxy_server, fake_upstream):
         assert response.json()["error"]["code"] == 502
         assert response.json()["id"] == req_id
 
+
+def test_unauthenticated(proxy_server):
+    response = httpx.post(PROXY_URL + "chain/ethereum",
+                          json={'jsonrpc': '2.0', 'method': 'eth_getBalance',
+                                'params': ['0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693', '0x1272619'], 'id': 1})
+    assert response.status_code == 403
+
+
+def test_bad_authentication(proxy_server):
+    response = httpx.post(PROXY_URL + "chain/ethereum?key=bad-actor",
+                          json={'jsonrpc': '2.0', 'method': 'eth_getBalance',
+                                'params': ['0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693', '0x1272619'], 'id': 1})
+    assert response.status_code == 400
+
+
 def test_get_status(proxy_server):
     response = httpx.get(PROXY_URL + "status")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
 
 def test_upstream_node_selector():
     node_a = proxy.UpstreamNode("a")

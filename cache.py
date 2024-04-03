@@ -77,9 +77,10 @@ def generate_cache_key(value) -> str:
     elif isinstance(value, (collections.abc.Sequence, collections.abc.Generator)):
         return generate_cache_key("".join((generate_cache_key(item) for item in value)))
     else:
-        raise TypeError(
-            f"Cannot generate cache key for value {value} of type {type(value)}"
-        )
+        raise TypeError(f"Cannot generate cache key for value {value} of type {type(value)}")
+
+def clear():
+    cache.clear()
 
 
 check_version()
