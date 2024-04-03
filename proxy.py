@@ -1,23 +1,29 @@
 import asyncio
 import enum
 import itertools
+import json
 import logging
 import os
-import json
 import random
 import time
 
 import anyio
 import httpx
+import uvicorn
 from starlette.applications import Starlette
+from starlette.authentication import (
+    AuthCredentials, AuthenticationBackend, AuthenticationError, SimpleUser
+)
+from starlette.authentication import requires
+from starlette.middleware import Middleware
+from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
-from starlette.middleware import Middleware
-import uvicorn
 
+import cache
+from cache import cache as cache_db
 import metrics
-from cache import is_cache_enabled, is_cacheable, cache, generate_cache_key
 
 logger = logging.getLogger("proxy")
 
@@ -133,28 +139,28 @@ async def make_request(node: UpstreamNode, blockchain: str, data: dict):
 
     # Generating the cache key before knowing if it is cacheable is not performant,
     # but it simplifies the functions as geting the response is done only in one place
-    params_hash = generate_cache_key(params)
+    params_hash = cache.generate_cache_key(params)
     cache_key = f"{blockchain}.{method}.{params_hash}"
-    if cache_key not in cache or not is_cache_enabled():
+    if cache_key not in cache_db or not cache.is_cache_enabled():
         upstream_response = await node.make_request(data)
         logger.debug(f"upstream status code {upstream_response.status_code}")
         resp_data = upstream_response.json()
 
-        if is_cacheable(method, params) and is_cache_enabled():
+        if cache.is_cacheable(method, params) and cache.is_cache_enabled():
             if "error" not in resp_data and "result" in resp_data and resp_data["result"] is not None:
-                cache[cache_key] = ("result", resp_data["result"])
+                cache_db[cache_key] = ("result", resp_data["result"])
             elif "error" in resp_data:
                 # These errors are "good ones", we want to cache the error because they should be invariant
                 # (don't depend on the node nor the time)
                 ERRORS_TO_CACHE = {-32000, -32015}
                 if resp_data["error"]["code"] in ERRORS_TO_CACHE:
-                    cache[cache_key] = ("error", resp_data["error"])
+                    cache_db[cache_key] = ("error", resp_data["error"])
         else:
             logger.debug(f"Not caching '{method}' with params: '{params}'")
 
         return resp_data
     else:
-        key, data = cache[cache_key]
+        key, data = cache_db[cache_key]
         return {"jsonrpc": "2.0", "id": 11, key: data, "cached": True}
 
 
@@ -169,16 +175,12 @@ def set_metric_ctx(request, key, value):
     request.scope["metrics_ctx"][key] = value
 
 
+@requires('authenticated')
 async def node_rpc(request: Request):
     try:
         request_data = await request.json()
     except json.JSONDecodeError:
         return error_response({"id": None}, code=-32700, message="Parse error")
-
-    if AUTHORIZED_KEYS:
-        key = request.query_params.get("key", "")
-        if key not in AUTHORIZED_KEYS:
-            return error_response(request_data, code=401, message="Unauthorized")
 
     blockchain = request.path_params['blockchain']
 
@@ -229,6 +231,15 @@ routes = [
     Route("/chain/{blockchain}", endpoint=node_rpc, methods=["POST"]),
 ]
 
+class QueryAuthBackend(AuthenticationBackend):
+    async def authenticate(self, conn):
+        key = conn.query_params.get("key", None)
+        if AUTHORIZED_KEYS and key is None:
+            return
+        if AUTHORIZED_KEYS and key not in AUTHORIZED_KEYS:
+            raise AuthenticationError('Invalid credentials')
+        else:
+            return AuthCredentials(["authenticated"]), SimpleUser(key)
 
 class MonitoringMiddleware:
     def __init__(self, app):
@@ -260,7 +271,8 @@ class MonitoringMiddleware:
 
 
 middleware = [
-    Middleware(MonitoringMiddleware)
+    Middleware(AuthenticationMiddleware, backend=QueryAuthBackend()),
+    Middleware(MonitoringMiddleware),
 ]
 
 app = Starlette(routes=routes, middleware=middleware)

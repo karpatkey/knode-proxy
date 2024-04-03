@@ -76,6 +76,7 @@ class FakeUpstreamNode:
 
 @pytest.fixture(scope="session")
 def proxy_server():
+    proxy.AUTHORIZED_KEYS = ["test-user"]
     config = uvicorn.Config(app=proxy.app, host="127.0.0.1", port=PROXY_PORT)
     server = UvicornThreadedServer(config=config)
     with server.run_in_thread():
@@ -100,4 +101,4 @@ def get_node(url):
     return w3
 
 def get_proxy_eth_node():
-    return get_node(PROXY_URL + "chain/ethereum")
+    return get_node(PROXY_URL + "chain/ethereum?key=test-user")
