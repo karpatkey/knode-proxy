@@ -38,12 +38,12 @@ Then access the node as foolows:
 To speed up the responses, and to relieve the upstream servers, knode-proxy caches some responses that
 are expected to be constant. For example the balance of a wallet at a specific block, etc.
 
-There are two env variables to control the cache.
+There follwing env variables to control the cache:
 
-`KPROXY_CACHE_DIR` to select where is stored the cache.
+* `KPROXY_CACHE_DIR` to select where is stored the cache.
 When deploying with docker take care to use a volume so the cache is not lost on restarts.
-
-`KPROXY_CACHE_DISABLE` to entirely disable the cache.
+* `KPROXY_CACHE_DISABLE` to entirely disable the cache.
+* `KPROXY_CACHE_SIZE_MB` to set the max size of the cache, defaults to 250MB.
 
 ### Metrics
 

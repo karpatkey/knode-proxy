@@ -11,11 +11,16 @@ logger = logging.getLogger("proxy.cache")
 
 VERSION = 1
 VERSION_CACHE_KEY = "VERSION"
+MIN_FILE_SIZE_BYTES = 250 * 1024 * 1024
+EVICTION_POLICY = "least-recently-used"
+SIZE_LIMIT = int(os.environ.get("KPROXY_CACHE_SIZE_MB", "250")) * 1024 * 1024
 
 cache_dir = os.environ.get("KPROXY_CACHE_DIR", "/tmp/kproxy/")
 logger.info(f"Cache storage is at '{cache_dir}'.")
-MIN_FILE_SIZE_BYTES = 250 * 1024 * 1024
-cache = diskcache.Cache(directory=cache_dir, disk_min_file_size=MIN_FILE_SIZE_BYTES)
+
+cache = diskcache.Cache(
+    directory=cache_dir, size_limit=SIZE_LIMIT, disk_min_file_size=MIN_FILE_SIZE_BYTES, eviction_policy=EVICTION_POLICY
+)
 
 _cache_enabled = not os.getenv("KPROXY_CACHE_DISABLE")
 
