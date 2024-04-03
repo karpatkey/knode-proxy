@@ -31,7 +31,7 @@ Pass an env variable with the authorized keys in the following format when runni
 
 Then access the node as foolows:
 
-`https://mynode.com/ethereum?key=my-secret-key1`
+`https://mynode.com/chain/ethereum?key=my-secret-key1`
 
 ### Cache
 

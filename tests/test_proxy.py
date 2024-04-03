@@ -5,7 +5,7 @@ import httpx
 
 import cache
 import proxy
-from tests.utils import PROXY_URL, fake_upstream, proxy_server, get_node
+from tests.utils import PROXY_URL, fake_upstream, proxy_server, get_proxy_eth_node
 
 logger = logging.getLogger()
 
@@ -13,7 +13,7 @@ cache.cache_enable(False)
 
 
 def test_get_balance_real_upstream(proxy_server):
-    w3 = get_node(PROXY_URL + "ethereum")
+    w3 = get_proxy_eth_node()
 
     # {'jsonrpc': '2.0', 'method': 'eth_getBalance', 'params': ['0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693', '0x1272617'], 'id': 1}
     balance = w3.eth.get_balance("0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693", block_identifier=19342871)
@@ -21,13 +21,13 @@ def test_get_balance_real_upstream(proxy_server):
 
 
 def test_chain_id_real_upstream(proxy_server):
-    w3 = get_node(PROXY_URL + "ethereum")
+    w3 = get_proxy_eth_node()
     assert w3.eth.chain_id == 1
 
 
 def test_get_balance(proxy_server, fake_upstream):
     with patch.object(proxy, "get_upstream_node_for_blockchain", lambda b: fake_upstream.node):
-        w3 = get_node(PROXY_URL + "ethereum")
+        w3 = get_proxy_eth_node()
 
         fake_upstream.add_responses([
             ({'jsonrpc': '2.0', 'id': 1, 'result': '0x1'}, 200),
@@ -47,7 +47,7 @@ def test_with_fake_node_500_error(proxy_server, fake_upstream):
             {'jsonrpc': '2.0', 'id': req_id, 'error': {"code": -32003, "message": "Transaction rejected"}},
             500)
 
-        response = httpx.post(PROXY_URL + "ethereum",
+        response = httpx.post(PROXY_URL + "chain/ethereum",
                               json={'jsonrpc': '2.0', 'method': 'eth_getBalance',
                                     'params': ['0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693', '0x1272619'], 'id': req_id})
 

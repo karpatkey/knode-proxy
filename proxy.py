@@ -226,7 +226,7 @@ for network, endpoints in config['nodes'].items():
 
 routes = [
     Route("/status", endpoint=status, methods=["GET"]),
-    Route("/{blockchain}", endpoint=node_rpc, methods=["POST"]),
+    Route("/chain/{blockchain}", endpoint=node_rpc, methods=["POST"]),
 ]
 
 
