@@ -98,3 +98,6 @@ def get_node(url):
     provider = HTTPProviderNoRetry(url)
     w3 = web3.Web3(provider)
     return w3
+
+def get_proxy_eth_node():
+    return get_node(PROXY_URL + "chain/ethereum")
