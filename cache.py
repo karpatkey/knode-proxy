@@ -79,6 +79,7 @@ def generate_cache_key(value) -> str:
     else:
         raise TypeError(f"Cannot generate cache key for value {value} of type {type(value)}")
 
+
 def clear():
     cache.clear()
 

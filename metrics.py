@@ -1,3 +1,5 @@
+import time
+
 from prometheus_client import Counter, Histogram, start_http_server
 
 rpc_requests_total = Counter(
@@ -30,3 +32,32 @@ upstream_errors_total = Counter(
     documentation="Total upstream requests resulting in errors",
     labelnames=["upstream_node"]
 )
+
+
+class MonitoringMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        scope["metrics_ctx"] = {}
+        start_time = time.monotonic()
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            duration = time.monotonic() - start_time
+            http_request_duration_s.observe(duration)
+            if "rpc" in scope["metrics_ctx"]:
+                status = str(scope["metrics_ctx"].get("error", 200))
+                blockchain = scope["metrics_ctx"].get("blockchain")
+                cached = scope["metrics_ctx"].get("cached")
+                method = scope["metrics_ctx"].get("method")
+                rpc_requests_total.labels(status_code=status,
+                                          rpc_method=method,
+                                          blockchain=blockchain,
+                                          cached=cached).inc()
+
+                if status != 200:
+                    http_errors_total.inc()

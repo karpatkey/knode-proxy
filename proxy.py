@@ -1,19 +1,11 @@
-import asyncio
-import enum
-import itertools
 import json
 import logging
 import os
-import random
 import time
 
-import anyio
-import httpx
 import uvicorn
 from starlette.applications import Starlette
-from starlette.authentication import (
-    AuthCredentials, AuthenticationBackend, AuthenticationError, SimpleUser
-)
+from starlette.authentication import AuthCredentials, AuthenticationBackend, AuthenticationError, SimpleUser
 from starlette.authentication import requires
 from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
@@ -22,14 +14,18 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 import cache
-from cache import cache as cache_db
 import metrics
+from rpc import (
+    ENDPOINTS,
+    MAX_UPSTREAM_TRIES_FOR_REQUEST,
+    get_upstream_node_for_blockchain,
+    make_request,
+    NodeNotHealthy,
+    UpstreamNodeSelector,
+    UpstreamNode,
+)
 
 logger = logging.getLogger("proxy")
-
-MAX_UPSTREAM_TRIES_FOR_REQUEST = 5
-MAX_HTTP_CONNECTIONS = 10
-MAX_KEEPALIVE_CONNECTIONS = 10
 
 cfg_data = os.environ.get("KPROXY_NODE_CFG", "")
 if not cfg_data:
@@ -45,127 +41,19 @@ if AUTHORIZED_KEYS:
     AUTHORIZED_KEYS = AUTHORIZED_KEYS.split(",")
 
 
-class NodeNotHealthy(Exception):
-    pass
-
-
-class NodeStatus(enum.Enum):
-    HEALTHY = 1
-    UNHEALTHY = 2
-
-
-ENDPOINTS: dict[str, "UpstreamNodeSelector"] = {}
-
-httpx_limits = httpx.Limits(max_keepalive_connections=MAX_HTTP_CONNECTIONS, max_connections=MAX_KEEPALIVE_CONNECTIONS)
-
-
-class UpstreamNode:
-    HEALTH_CHECK_INTERVAL_S = 10.
-
-    def __init__(self, endpoint: str):
-        self.endpoint = endpoint
-        self.client = httpx.AsyncClient(limits=httpx_limits)
-        self.status: NodeStatus = NodeStatus.HEALTHY
-
-        async def check_loop():
-            while True:
-                await anyio.sleep(self.HEALTH_CHECK_INTERVAL_S + random.random() * self.HEALTH_CHECK_INTERVAL_S / 2)
-                await self.health_check()
-
-        try:
-            asyncio.get_running_loop()
-            asyncio.create_task(check_loop())
-        except RuntimeError:
-            pass
-
-    def __str__(self) -> str:
-        return f"UpstreamNode({self.endpoint})"
-
-    async def health_check(self):
-        # ask something that won't be already cached by the upstream
-        block = random.randint(1, 100000)
-        data = {'jsonrpc': '2.0',
-                'method': 'eth_getBalance',
-                'params': ['0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693', hex(block)],
-                'id': 0x43a174}
-        start = time.monotonic()
-        try:
-            await self.make_request(data)
-        except Exception:
-            pass
-
-    async def make_request(self, data: dict) -> httpx.Response:
-        try:
-            response = await self.client.post(self.endpoint, json=data)
-        except (httpx.HTTPError, anyio.EndOfStream) as exc:
-            self.status = NodeStatus.UNHEALTHY
-            logger.warning(f"{repr(exc)} for {self}")
-            raise NodeNotHealthy(f"{self} {exc}")
-
-        if response.status_code != 200:
-            self.status = NodeStatus.UNHEALTHY
-            logger.warning(f"status code {response.status_code} != 200 for {self}")
-            raise NodeNotHealthy(f"{self} returned status code == {response.status_code}")
+class QueryAuthBackend(AuthenticationBackend):
+    async def authenticate(self, conn):
+        key = conn.query_params.get("key", None)
+        if AUTHORIZED_KEYS and key is None:
+            return
+        if AUTHORIZED_KEYS and key not in AUTHORIZED_KEYS:
+            raise AuthenticationError("Invalid credentials")
         else:
-            self.status = NodeStatus.HEALTHY
-        return response
+            return AuthCredentials(["authenticated"]), SimpleUser(key)
 
 
-class UpstreamNodeSelector:
-    def __init__(self, nodes: list[UpstreamNode]):
-        self.nodes = nodes
-        self._cyclic_iterator = itertools.cycle(self.nodes)
-
-    def get_node(self) -> UpstreamNode:
-        node = next(self._cyclic_iterator)
-        cycle_counter = itertools.count()
-        # cycle at least one round but move to the next one in the cycle if all are unhealthy
-        while node.status != NodeStatus.HEALTHY and next(cycle_counter) <= len(self.nodes) + 1:
-            node = next(self._cyclic_iterator)
-        return node
-
-
-def get_upstream_node_for_blockchain(blockchain: str) -> UpstreamNode:
-    try:
-        node = ENDPOINTS[blockchain].get_node()
-    except KeyError:
-        raise NotImplementedError(f"Not supported blockchain {blockchain}")
-    return node
-
-
-async def make_request(node: UpstreamNode, blockchain: str, data: dict):
-    method = data['method']
-    params = data.get('params', [])
-
-    # Generating the cache key before knowing if it is cacheable is not performant,
-    # but it simplifies the functions as geting the response is done only in one place
-    params_hash = cache.generate_cache_key(params)
-    cache_key = f"{blockchain}.{method}.{params_hash}"
-    if cache_key not in cache_db or not cache.is_cache_enabled():
-        upstream_response = await node.make_request(data)
-        logger.debug(f"upstream status code {upstream_response.status_code}")
-        resp_data = upstream_response.json()
-
-        if cache.is_cacheable(method, params) and cache.is_cache_enabled():
-            if "error" not in resp_data and "result" in resp_data and resp_data["result"] is not None:
-                cache_db[cache_key] = ("result", resp_data["result"])
-            elif "error" in resp_data:
-                # These errors are "good ones", we want to cache the error because they should be invariant
-                # (don't depend on the node nor the time)
-                ERRORS_TO_CACHE = {-32000, -32015}
-                if resp_data["error"]["code"] in ERRORS_TO_CACHE:
-                    cache_db[cache_key] = ("error", resp_data["error"])
-        else:
-            logger.debug(f"Not caching '{method}' with params: '{params}'")
-
-        return resp_data
-    else:
-        key, data = cache_db[cache_key]
-        return {"jsonrpc": "2.0", "id": 11, key: data, "cached": True}
-
-
-def error_response(request_data, code, message, data=None):
-    resp = {"jsonrpc": "2.0", "id": request_data["id"], "error": {"code": code, "message": message}}
+def build_error_response(rpc_id, code, message, data=None):
+    resp = {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": code, "message": message}}
     if data is not None:
         resp["error"]["data"] = data
     return JSONResponse(content=resp)
@@ -175,17 +63,17 @@ def set_metric_ctx(request, key, value):
     request.scope["metrics_ctx"][key] = value
 
 
-@requires('authenticated')
+@requires("authenticated")
 async def node_rpc(request: Request):
     try:
         request_data = await request.json()
     except json.JSONDecodeError:
-        return error_response({"id": None}, code=-32700, message="Parse error")
+        return build_error_response(rpc_id=None, code=-32700, message="Parse error")
 
-    blockchain = request.path_params['blockchain']
+    blockchain = request.path_params["blockchain"]
 
     if blockchain not in ENDPOINTS:
-        return error_response(request_data, code=404, message=f"No RPC nodes for blockchain {blockchain}")
+        return build_error_response(request_data["id"], code=404, message=f"No RPC nodes for blockchain {blockchain}")
 
     set_metric_ctx(request, key="rpc", value=True)
     set_metric_ctx(request, key="blockchain", value=blockchain)
@@ -193,12 +81,15 @@ async def node_rpc(request: Request):
 
     for upstream_try in range(MAX_UPSTREAM_TRIES_FOR_REQUEST):
         node = get_upstream_node_for_blockchain(blockchain)
-        logger.info(f"Get request for '{blockchain}' to {node.endpoint}, try {upstream_try}, with data: {request_data!s:.100}")
+        logger.info(
+            f"Get request for '{blockchain}' to {node.endpoint}, try {upstream_try}, with data: {request_data!s:.100}"
+        )
         error = False
         start_time = time.monotonic()
         try:
-            metrics.upstream_requests_total.labels(upstream_node=node.endpoint,
-                                                   rpc_method=request_data.get("method", "unknown")).inc()
+            metrics.upstream_requests_total.labels(
+                upstream_node=node.endpoint, rpc_method=request_data.get("method", "unknown")
+            ).inc()
             upstream_data = await make_request(node, blockchain, request_data)
 
             upstream_data["id"] = request_data["id"]
@@ -215,21 +106,21 @@ async def node_rpc(request: Request):
         return JSONResponse(content=upstream_data)
 
     set_metric_ctx(request, key="error", value=502)
-    return error_response(request_data, code=502, message="Can't get a good response from upstream nodes")
+    return build_error_response(request_data["id"], code=502, message="Can't get a good response from upstream nodes")
 
 
 async def status(request: Request):
     return JSONResponse(content={"status": "ok"})
 
 
-@requires('authenticated')
+@requires("authenticated")
 async def cache_clear(request: Request):
     cache.clear()
     return JSONResponse(content={"status": "ok"})
 
 
 # Load nodes from the config
-for network, endpoints in config['nodes'].items():
+for network, endpoints in config["nodes"].items():
     ENDPOINTS[network] = UpstreamNodeSelector([UpstreamNode(endpoint) for endpoint in endpoints])
 
 routes = [
@@ -238,48 +129,9 @@ routes = [
     Route("/cache/clear", endpoint=cache_clear, methods=["POST"]),
 ]
 
-class QueryAuthBackend(AuthenticationBackend):
-    async def authenticate(self, conn):
-        key = conn.query_params.get("key", None)
-        if AUTHORIZED_KEYS and key is None:
-            return
-        if AUTHORIZED_KEYS and key not in AUTHORIZED_KEYS:
-            raise AuthenticationError('Invalid credentials')
-        else:
-            return AuthCredentials(["authenticated"]), SimpleUser(key)
-
-class MonitoringMiddleware:
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            return await self.app(scope, receive, send)
-
-        scope["metrics_ctx"] = {}
-        start_time = time.monotonic()
-        try:
-            await self.app(scope, receive, send)
-        finally:
-            duration = time.monotonic() - start_time
-            metrics.http_request_duration_s.observe(duration)
-            if "rpc" in scope["metrics_ctx"]:
-                status = str(scope["metrics_ctx"].get("error", 200))
-                blockchain = scope["metrics_ctx"].get("blockchain")
-                cached = scope["metrics_ctx"].get("cached")
-                method = scope["metrics_ctx"].get("method")
-                metrics.rpc_requests_total.labels(status_code=status,
-                                                  rpc_method=method,
-                                                  blockchain=blockchain,
-                                                  cached=cached).inc()
-
-                if status != 200:
-                    metrics.http_errors_total.inc()
-
-
 middleware = [
     Middleware(AuthenticationMiddleware, backend=QueryAuthBackend()),
-    Middleware(MonitoringMiddleware),
+    Middleware(metrics.MonitoringMiddleware),
 ]
 
 app = Starlette(routes=routes, middleware=middleware)
