@@ -14,7 +14,6 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.middleware import Middleware
-from starlette.middleware.base import BaseHTTPMiddleware
 import uvicorn
 
 import metrics
@@ -225,21 +224,6 @@ routes = [
     Route("/status", endpoint=status, methods=["GET"]),
     Route("/{blockchain}", endpoint=root, methods=["POST"]),
 ]
-
-
-class MetricsMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        start_time = time.monotonic()
-
-        response = await call_next(request)
-
-        print(request.scope["metrics_ctx"])
-        duration = time.monotonic() - start_time
-        metrics.http_request_duration_s.observe(duration)
-        metrics.http_requests_total.labels(status_code=str(response.status_code)).inc()
-        if response.status_code != 200:
-            metrics.http_errors_total.inc()
-        return response
 
 
 class MonitoringMiddleware:
