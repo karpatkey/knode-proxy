@@ -86,6 +86,7 @@ async def node_rpc(request: Request):
     cached_data = cache.get_rpc_response_from_cache(cache_key)
     if cached_data:
         set_metric_ctx(request, key="cached", value=True)
+        cached_data["id"] = request_data["id"]
         return JSONResponse(content=cached_data)
 
     for try_count in range(MAX_UPSTREAM_TRIES_FOR_REQUEST):
@@ -93,7 +94,6 @@ async def node_rpc(request: Request):
         logger.info(f"Request for '{chain}' to {node.url}, try {try_count}, with data: {request_data!s:.100}")
         try:
             upstream_data = await make_request(node, request_data)
-            upstream_data["id"] = request_data["id"]
         except NodeNotHealthy:
             continue
 
