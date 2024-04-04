@@ -70,29 +70,39 @@ async def node_rpc(request: Request):
     except json.JSONDecodeError:
         return build_error_response(rpc_id=None, code=-32700, message="Parse error")
 
-    blockchain = request.path_params["blockchain"]
+    chain = request.path_params["blockchain"]
 
-    if blockchain not in ENDPOINTS:
-        return build_error_response(request_data["id"], code=404, message=f"No RPC nodes for blockchain {blockchain}")
+    if chain not in ENDPOINTS:
+        return build_error_response(request_data["id"], code=404, message=f"No RPC nodes for blockchain {chain}")
 
     set_metric_ctx(request, key="rpc", value=True)
-    set_metric_ctx(request, key="blockchain", value=blockchain)
+    set_metric_ctx(request, key="blockchain", value=chain)
     set_metric_ctx(request, key="method", value=request_data.get("method", "unknown"))
 
-    for upstream_try in range(MAX_UPSTREAM_TRIES_FOR_REQUEST):
-        node = get_upstream_node_for_blockchain(blockchain)
-        logger.info(
-            f"Get request for '{blockchain}' to {node.endpoint}, try {upstream_try}, with data: {request_data!s:.100}"
-        )
+    method = request_data.get("method", None)
+    params = request_data.get("params", [])
+
+    cache_key = cache.get_rpc_cache_key(chain, method, params)
+    cached_data = cache.get_rpc_response_from_cache(cache_key)
+    if cached_data:
+        set_metric_ctx(request, key="cached", value=True)
+        return JSONResponse(content=cached_data)
+
+    for try_count in range(MAX_UPSTREAM_TRIES_FOR_REQUEST):
+        node = get_upstream_node_for_blockchain(chain)
+        logger.info(f"Request for '{chain}' to {node.url}, try {try_count}, with data: {request_data!s:.100}")
         try:
-            upstream_data = await make_request(node, blockchain, request_data)
+            upstream_data = await make_request(node, request_data)
             upstream_data["id"] = request_data["id"]
         except NodeNotHealthy:
             continue
 
-        logger.info(f"Response for '{blockchain}' with data: {upstream_data!s:.100}")
-        set_metric_ctx(request, key="upstream_tries", value=upstream_try + 1)
-        set_metric_ctx(request, key="cached", value=upstream_data.pop("cached", False))
+        cache.set_rpc_response_to_cache(upstream_data, cache_key, method, params)
+
+        logger.info(f"Response for '{chain}' with data: {upstream_data!s:.100}")
+        set_metric_ctx(request, key="upstream_tries", value=try_count + 1)
+        set_metric_ctx(request, key="cached", value=False)
+
         return JSONResponse(content=upstream_data)
 
     set_metric_ctx(request, key="error", value=502)
