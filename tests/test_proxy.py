@@ -2,11 +2,11 @@ import logging
 from unittest.mock import patch
 
 import httpx
-import pytest
 
 import cache
 import proxy
-from tests.utils import PROXY_URL, fake_upstream, proxy_server, get_node, get_proxy_eth_node
+from rpc import NodeStatus
+from tests.utils import PROXY_URL, fake_upstream, proxy_server, get_proxy_eth_node
 
 logger = logging.getLogger()
 
@@ -30,10 +30,12 @@ def test_get_balance(proxy_server, fake_upstream):
     with patch.object(proxy, "get_upstream_node_for_blockchain", lambda b: fake_upstream.node):
         w3 = get_proxy_eth_node()
 
-        fake_upstream.add_responses([
-            ({'jsonrpc': '2.0', 'id': 1, 'result': '0x1'}, 200),
-            ({'jsonrpc': '2.0', 'id': 1, 'result': '0x2386f26fc10000'}, 200),
-        ])
+        fake_upstream.add_responses(
+            [
+                ({"jsonrpc": "2.0", "id": 1, "result": "0x1"}, 200),
+                ({"jsonrpc": "2.0", "id": 1, "result": "0x2386f26fc10000"}, 200),
+            ]
+        )
 
         assert w3.eth.chain_id == 1
 
@@ -45,12 +47,18 @@ def test_with_fake_node_500_error(proxy_server, fake_upstream):
     with patch.object(proxy, "get_upstream_node_for_blockchain", lambda b: fake_upstream.node):
         req_id = 22
         fake_upstream.set_default_response(
-            {'jsonrpc': '2.0', 'id': req_id, 'error': {"code": -32003, "message": "Transaction rejected"}},
-            500)
+            {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32003, "message": "Transaction rejected"}}, 500
+        )
 
-        response = httpx.post(PROXY_URL + "chain/ethereum?key=test-user",
-                              json={'jsonrpc': '2.0', 'method': 'eth_getBalance',
-                                    'params': ['0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693', '0x1272619'], 'id': req_id})
+        response = httpx.post(
+            PROXY_URL + "chain/ethereum?key=test-user",
+            json={
+                "jsonrpc": "2.0",
+                "method": "eth_getBalance",
+                "params": ["0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693", "0x1272619"],
+                "id": req_id,
+            },
+        )
 
         assert response.status_code == 200
         assert response.json()["error"]["code"] == 502
@@ -58,16 +66,28 @@ def test_with_fake_node_500_error(proxy_server, fake_upstream):
 
 
 def test_unauthenticated(proxy_server):
-    response = httpx.post(PROXY_URL + "chain/ethereum",
-                          json={'jsonrpc': '2.0', 'method': 'eth_getBalance',
-                                'params': ['0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693', '0x1272619'], 'id': 1})
+    response = httpx.post(
+        PROXY_URL + "chain/ethereum",
+        json={
+            "jsonrpc": "2.0",
+            "method": "eth_getBalance",
+            "params": ["0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693", "0x1272619"],
+            "id": 1,
+        },
+    )
     assert response.status_code == 403
 
 
 def test_bad_authentication(proxy_server):
-    response = httpx.post(PROXY_URL + "chain/ethereum?key=bad-actor",
-                          json={'jsonrpc': '2.0', 'method': 'eth_getBalance',
-                                'params': ['0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693', '0x1272619'], 'id': 1})
+    response = httpx.post(
+        PROXY_URL + "chain/ethereum?key=bad-actor",
+        json={
+            "jsonrpc": "2.0",
+            "method": "eth_getBalance",
+            "params": ["0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693", "0x1272619"],
+            "id": 1,
+        },
+    )
     assert response.status_code == 400
 
 
@@ -85,22 +105,22 @@ def test_upstream_node_selector():
     assert selector.get_node() == node_b
     assert selector.get_node() == node_a
     assert selector.get_node() == node_b
-    node_a.status = proxy.NodeStatus.UNHEALTHY
+    node_a.status = NodeStatus.UNHEALTHY
     # one node unhealthy, continue with the next healthy one
     assert selector.get_node() == node_b
     assert selector.get_node() == node_b
-    node_b.status = proxy.NodeStatus.UNHEALTHY
+    node_b.status = NodeStatus.UNHEALTHY
 
     # both nodes are unhealthy, just continue retrying with the unhealthy
     assert selector.get_node() == node_a
     assert selector.get_node() == node_b
 
     # b is now healthy again
-    node_b.status = proxy.NodeStatus.HEALTHY
+    node_b.status = NodeStatus.HEALTHY
     assert selector.get_node() == node_b
     assert selector.get_node() == node_b
 
     # a is now healthy again
-    node_a.status = proxy.NodeStatus.HEALTHY
+    node_a.status = NodeStatus.HEALTHY
     assert selector.get_node() == node_a
     assert selector.get_node() == node_b
