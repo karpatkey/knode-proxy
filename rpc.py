@@ -10,6 +10,7 @@ import httpx
 
 import cache
 from cache import cache as cache_db
+import metrics
 
 logger = logging.getLogger("rpc")
 
@@ -68,8 +69,14 @@ class UpstreamNode:
             pass
 
     async def make_request(self, data: dict) -> httpx.Response:
+        metrics.upstream_requests_total.labels(
+            upstream_node=self.endpoint, rpc_method=data.get("method", "unknown")
+        ).inc()
+
         try:
+            start_time = time.monotonic()
             response = await self.client.post(self.endpoint, json=data)
+            metrics.upstream_latency_s.labels(upstream_node=self.endpoint).observe(time.monotonic() - start_time)
         except (httpx.HTTPError, anyio.EndOfStream) as exc:
             self.status = NodeStatus.UNHEALTHY
             logger.warning(f"{repr(exc)} for {self}")

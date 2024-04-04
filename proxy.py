@@ -84,21 +84,11 @@ async def node_rpc(request: Request):
         logger.info(
             f"Get request for '{blockchain}' to {node.endpoint}, try {upstream_try}, with data: {request_data!s:.100}"
         )
-        error = False
-        start_time = time.monotonic()
         try:
-            metrics.upstream_requests_total.labels(
-                upstream_node=node.endpoint, rpc_method=request_data.get("method", "unknown")
-            ).inc()
             upstream_data = await make_request(node, blockchain, request_data)
-
             upstream_data["id"] = request_data["id"]
         except NodeNotHealthy:
-            error = True
-        finally:
-            metrics.upstream_latency_s.labels(upstream_node=node.endpoint).observe(time.monotonic() - start_time)
-            if error:
-                continue
+            continue
 
         logger.info(f"Response for '{blockchain}' with data: {upstream_data!s:.100}")
         set_metric_ctx(request, key="upstream_tries", value=upstream_try + 1)
