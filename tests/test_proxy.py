@@ -6,7 +6,7 @@ import httpx
 import cache
 import proxy
 from rpc import NodeStatus
-from tests.utils import PROXY_URL, fake_upstream, proxy_server, get_proxy_eth_node
+from tests.utils import PROXY_URL, get_proxy_eth_node
 
 logger = logging.getLogger()
 
@@ -27,42 +27,39 @@ def test_chain_id_real_upstream(proxy_server):
 
 
 def test_get_balance(proxy_server, fake_upstream):
-    with patch.object(proxy, "get_upstream_node_for_blockchain", lambda b: fake_upstream.node):
-        w3 = get_proxy_eth_node()
+    w3 = get_proxy_eth_node()
+    fake_upstream.add_responses(
+        [
+            ({"jsonrpc": "2.0", "id": 1, "result": "0x1"}, 200),
+            ({"jsonrpc": "2.0", "id": 1, "result": "0x2386f26fc10000"}, 200),
+        ]
+    )
 
-        fake_upstream.add_responses(
-            [
-                ({"jsonrpc": "2.0", "id": 1, "result": "0x1"}, 200),
-                ({"jsonrpc": "2.0", "id": 1, "result": "0x2386f26fc10000"}, 200),
-            ]
-        )
+    assert w3.eth.chain_id == 1
 
-        assert w3.eth.chain_id == 1
-
-        balance = w3.eth.get_balance("0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693", block_identifier=19342871)
-        assert balance == 10000000000000000
+    balance = w3.eth.get_balance("0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693", block_identifier=19342871)
+    assert balance == 10000000000000000
 
 
 def test_with_fake_node_500_error(proxy_server, fake_upstream):
-    with patch.object(proxy, "get_upstream_node_for_blockchain", lambda b: fake_upstream.node):
-        req_id = 22
-        fake_upstream.set_default_response(
-            {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32003, "message": "Transaction rejected"}}, 500
-        )
+    req_id = 22
+    fake_upstream.set_default_response(
+        {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32003, "message": "Transaction rejected"}}, 500
+    )
 
-        response = httpx.post(
-            PROXY_URL + "chain/ethereum?key=test-user",
-            json={
-                "jsonrpc": "2.0",
-                "method": "eth_getBalance",
-                "params": ["0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693", "0x1272619"],
-                "id": req_id,
-            },
-        )
+    response = httpx.post(
+        PROXY_URL + "chain/ethereum?key=test-user",
+        json={
+            "jsonrpc": "2.0",
+            "method": "eth_getBalance",
+            "params": ["0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693", "0x1272619"],
+            "id": req_id,
+        },
+    )
 
-        assert response.status_code == 200
-        assert response.json()["error"]["code"] == 502
-        assert response.json()["id"] == req_id
+    assert response.status_code == 200
+    assert response.json()["error"]["code"] == 502
+    assert response.json()["id"] == req_id
 
 
 def test_unauthenticated(proxy_server):
@@ -89,6 +86,22 @@ def test_bad_authentication(proxy_server):
         },
     )
     assert response.status_code == 400
+
+
+def test_cache_chain_id(proxy_server, fake_upstream, cache_enabled):
+    w3 = get_proxy_eth_node()
+
+    fake_upstream.add_responses(
+        [
+            ({"jsonrpc": "2.0", "id": 1, "result": "0x1"}, 200),
+        ]
+    )
+
+    assert w3.eth.chain_id == 1
+
+    # If cache does not work then the assert will fail
+    # as there is only one fale response
+    assert w3.eth.chain_id == 1
 
 
 def test_get_status(proxy_server):
