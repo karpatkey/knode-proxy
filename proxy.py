@@ -1,7 +1,8 @@
+import collections
 import json
 import logging
 import os
-import time
+
 
 import uvicorn
 from starlette.applications import Starlette
@@ -40,6 +41,7 @@ AUTHORIZED_KEYS = os.environ.get("KPROXY_AUTHORIZED_KEYS", "").strip()
 if AUTHORIZED_KEYS:
     AUTHORIZED_KEYS = AUTHORIZED_KEYS.split(",")
 
+debug_last_rpc_calls = collections.deque(maxlen=100)
 
 class QueryAuthBackend(AuthenticationBackend):
     async def authenticate(self, conn):
@@ -87,6 +89,7 @@ async def node_rpc(request: Request):
     if cached_data:
         set_metric_ctx(request, key="cached", value=True)
         cached_data["id"] = request_data["id"]
+        debug_last_rpc_calls.append({"req": request_data, "resp": cached_data, "cached": True})
         return JSONResponse(content=cached_data)
 
     for try_count in range(MAX_UPSTREAM_TRIES_FOR_REQUEST):
@@ -102,7 +105,7 @@ async def node_rpc(request: Request):
         logger.info(f"Response for '{chain}' with data: {upstream_data!s:.100}")
         set_metric_ctx(request, key="upstream_tries", value=try_count + 1)
         set_metric_ctx(request, key="cached", value=False)
-
+        debug_last_rpc_calls.append({"req": request_data, "resp": upstream_data, "cached": False})
         return JSONResponse(content=upstream_data)
 
     set_metric_ctx(request, key="error", value=502)
@@ -118,6 +121,9 @@ async def cache_clear(request: Request):
     cache.clear()
     return JSONResponse(content={"status": "ok"})
 
+@requires("authenticated")
+async def debug_rpc_calls(request: Request):
+    return JSONResponse(content={"status": "ok", "data": list(debug_last_rpc_calls)})
 
 # Load nodes from the config
 for network, endpoints in config["nodes"].items():
@@ -127,6 +133,7 @@ routes = [
     Route("/status", endpoint=status, methods=["GET"]),
     Route("/chain/{blockchain}", endpoint=node_rpc, methods=["POST"]),
     Route("/cache/clear", endpoint=cache_clear, methods=["POST"]),
+    Route("/debug/rpc_calls", endpoint=debug_rpc_calls, methods=["GET"]),
 ]
 
 middleware = [
