@@ -1,7 +1,8 @@
+import collections
 import json
 import logging
 import os
-import time
+
 
 import uvicorn
 from starlette.applications import Starlette
@@ -40,6 +41,7 @@ AUTHORIZED_KEYS = os.environ.get("KPROXY_AUTHORIZED_KEYS", "").strip()
 if AUTHORIZED_KEYS:
     AUTHORIZED_KEYS = AUTHORIZED_KEYS.split(",")
 
+debug_last_rpc_calls = collections.deque(maxlen=100)
 
 class QueryAuthBackend(AuthenticationBackend):
     async def authenticate(self, conn):
@@ -70,39 +72,40 @@ async def node_rpc(request: Request):
     except json.JSONDecodeError:
         return build_error_response(rpc_id=None, code=-32700, message="Parse error")
 
-    blockchain = request.path_params["blockchain"]
+    chain = request.path_params["blockchain"]
 
-    if blockchain not in ENDPOINTS:
-        return build_error_response(request_data["id"], code=404, message=f"No RPC nodes for blockchain {blockchain}")
+    if chain not in ENDPOINTS:
+        return build_error_response(request_data["id"], code=404, message=f"No RPC nodes for blockchain {chain}")
 
     set_metric_ctx(request, key="rpc", value=True)
-    set_metric_ctx(request, key="blockchain", value=blockchain)
+    set_metric_ctx(request, key="blockchain", value=chain)
     set_metric_ctx(request, key="method", value=request_data.get("method", "unknown"))
 
-    for upstream_try in range(MAX_UPSTREAM_TRIES_FOR_REQUEST):
-        node = get_upstream_node_for_blockchain(blockchain)
-        logger.info(
-            f"Get request for '{blockchain}' to {node.endpoint}, try {upstream_try}, with data: {request_data!s:.100}"
-        )
-        error = False
-        start_time = time.monotonic()
+    method = request_data.get("method", None)
+    params = request_data.get("params", [])
+
+    cache_key = cache.get_rpc_cache_key(chain, method, params)
+    cached_data = cache.get_rpc_response_from_cache(cache_key)
+    if cached_data:
+        set_metric_ctx(request, key="cached", value=True)
+        cached_data["id"] = request_data["id"]
+        debug_last_rpc_calls.append({"req": request_data, "resp": cached_data, "cached": True})
+        return JSONResponse(content=cached_data)
+
+    for try_count in range(MAX_UPSTREAM_TRIES_FOR_REQUEST):
+        node = get_upstream_node_for_blockchain(chain)
+        logger.info(f"Request for '{chain}' to {node.url}, try {try_count}, with data: {request_data!s:.100}")
         try:
-            metrics.upstream_requests_total.labels(
-                upstream_node=node.endpoint, rpc_method=request_data.get("method", "unknown")
-            ).inc()
-            upstream_data = await make_request(node, blockchain, request_data)
-
-            upstream_data["id"] = request_data["id"]
+            upstream_data = await make_request(node, request_data)
         except NodeNotHealthy:
-            error = True
-        finally:
-            metrics.upstream_latency_s.labels(upstream_node=node.endpoint).observe(time.monotonic() - start_time)
-            if error:
-                continue
+            continue
 
-        logger.info(f"Response for '{blockchain}' with data: {upstream_data!s:.100}")
-        set_metric_ctx(request, key="upstream_tries", value=upstream_try + 1)
-        set_metric_ctx(request, key="cached", value=upstream_data.pop("cached", False))
+        cache.set_rpc_response_to_cache(upstream_data, cache_key, method, params)
+
+        logger.info(f"Response for '{chain}' with data: {upstream_data!s:.100}")
+        set_metric_ctx(request, key="upstream_tries", value=try_count + 1)
+        set_metric_ctx(request, key="cached", value=False)
+        debug_last_rpc_calls.append({"req": request_data, "resp": upstream_data, "cached": False})
         return JSONResponse(content=upstream_data)
 
     set_metric_ctx(request, key="error", value=502)
@@ -118,6 +121,9 @@ async def cache_clear(request: Request):
     cache.clear()
     return JSONResponse(content={"status": "ok"})
 
+@requires("authenticated")
+async def debug_rpc_calls(request: Request):
+    return JSONResponse(content={"status": "ok", "data": list(debug_last_rpc_calls)})
 
 # Load nodes from the config
 for network, endpoints in config["nodes"].items():
@@ -127,6 +133,7 @@ routes = [
     Route("/status", endpoint=status, methods=["GET"]),
     Route("/chain/{blockchain}", endpoint=node_rpc, methods=["POST"]),
     Route("/cache/clear", endpoint=cache_clear, methods=["POST"]),
+    Route("/debug/rpc_calls", endpoint=debug_rpc_calls, methods=["GET"]),
 ]
 
 middleware = [

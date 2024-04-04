@@ -5,11 +5,11 @@ import threading
 import time
 
 import pytest
+import uvicorn
 import web3
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
-import uvicorn
 
 import proxy
 
@@ -39,7 +39,7 @@ class UvicornThreadedServer(uvicorn.Server):
 
 
 class FakeUpstreamNode:
-    def __init__(self, port, log_level='info'):
+    def __init__(self, port, log_level="info"):
         self.fake_data_q = queue.Queue()
         self.fake_default_response = ({}, 500)
         routes = [
@@ -49,7 +49,6 @@ class FakeUpstreamNode:
         config = uvicorn.Config(app=self.app, host="127.0.0.1", port=port, log_level=log_level)
         self.server = UvicornThreadedServer(config=config)
         self.node = proxy.UpstreamNode(FAKE_UPSTREAM_NODE_URL)
-
 
     async def fake_node_root(self, request):
         data = await request.json()
@@ -74,23 +73,6 @@ class FakeUpstreamNode:
         self.fake_default_response = (data, status_code)
 
 
-@pytest.fixture(scope="session")
-def proxy_server():
-    proxy.AUTHORIZED_KEYS = ["test-user"]
-    config = uvicorn.Config(app=proxy.app, host="127.0.0.1", port=PROXY_PORT)
-    server = UvicornThreadedServer(config=config)
-    with server.run_in_thread():
-        yield
-
-
-@pytest.fixture(scope="session")
-def fake_upstream():
-    fake_upstream_node = FakeUpstreamNode(FAKE_UPSTREAM_NODE_PORT)
-    with fake_upstream_node.server.run_in_thread():
-        fake_upstream_node.fake_data_q.queue.clear()
-        yield fake_upstream_node
-
-
 def get_node(url):
     class HTTPProviderNoRetry(web3.HTTPProvider):
         # disable the retry middleware
@@ -99,6 +81,7 @@ def get_node(url):
     provider = HTTPProviderNoRetry(url)
     w3 = web3.Web3(provider)
     return w3
+
 
 def get_proxy_eth_node():
     return get_node(PROXY_URL + "chain/ethereum?key=test-user")

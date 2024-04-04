@@ -53,6 +53,7 @@ def is_cacheable(method, params):
         "eth_getStorageAt",
         "eth_getBalance",
         "eth_getTransactionCount",
+        "eth_getBlockByNumber",
     }
     do_cache = False
     # TODO: take in consideration the other string blocks like "pending", "earliest"
@@ -78,6 +79,29 @@ def generate_cache_key(value) -> str:
         return generate_cache_key("".join((generate_cache_key(item) for item in value)))
     else:
         raise TypeError(f"Cannot generate cache key for value {value} of type {type(value)}")
+
+
+def get_rpc_cache_key(blockchain, method, params):
+    params_hash = generate_cache_key(params)
+    return f"{blockchain}.{method}.{params_hash}"
+
+
+def get_rpc_response_from_cache(cache_key):
+    if is_cache_enabled() and cache_key in cache:
+        key, data = cache[cache_key]
+        return {"jsonrpc": "2.0", "id": 11, key: data}
+
+
+def set_rpc_response_to_cache(resp_data, cache_key, method, params):
+    if is_cache_enabled() and is_cacheable(method, params):
+        if "error" not in resp_data and "result" in resp_data and resp_data["result"] is not None:
+            cache[cache_key] = ("result", resp_data["result"])
+        elif "error" in resp_data:
+            # These errors are "good ones", we want to cache the error because they should be invariant
+            # (don't depend on the node nor the time)
+            ERRORS_TO_CACHE = {-32000, -32015}
+            if resp_data["error"]["code"] in ERRORS_TO_CACHE:
+                cache[cache_key] = ("error", resp_data["error"])
 
 
 def clear():

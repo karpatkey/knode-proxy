@@ -10,6 +10,7 @@ import httpx
 
 import cache
 from cache import cache as cache_db
+import metrics
 
 logger = logging.getLogger("rpc")
 
@@ -33,8 +34,8 @@ class NodeStatus(enum.Enum):
 class UpstreamNode:
     HEALTH_CHECK_INTERVAL_S = 10.0
 
-    def __init__(self, endpoint: str):
-        self.endpoint = endpoint
+    def __init__(self, url: str):
+        self.url = url
         self.client = httpx.AsyncClient(limits=HTTPX_LIMITS)
         self.status: NodeStatus = NodeStatus.HEALTHY
 
@@ -50,7 +51,7 @@ class UpstreamNode:
             pass
 
     def __str__(self) -> str:
-        return f"UpstreamNode({self.endpoint})"
+        return f"UpstreamNode({self.url})"
 
     async def health_check(self):
         # ask something that won't be already cached by the upstream
@@ -68,8 +69,12 @@ class UpstreamNode:
             pass
 
     async def make_request(self, data: dict) -> httpx.Response:
+        metrics.upstream_requests_total.labels(upstream_node=self.url, rpc_method=data.get("method", "unknown")).inc()
+
         try:
-            response = await self.client.post(self.endpoint, json=data)
+            start_time = time.monotonic()
+            response = await self.client.post(self.url, json=data)
+            metrics.upstream_latency_s.labels(upstream_node=self.url).observe(time.monotonic() - start_time)
         except (httpx.HTTPError, anyio.EndOfStream) as exc:
             self.status = NodeStatus.UNHEALTHY
             logger.warning(f"{repr(exc)} for {self}")
@@ -106,32 +111,8 @@ def get_upstream_node_for_blockchain(blockchain: str) -> UpstreamNode:
     return node
 
 
-async def make_request(node: UpstreamNode, blockchain: str, data: dict):
-    method = data["method"]
-    params = data.get("params", [])
-
-    # Generating the cache key before knowing if it is cacheable is not performant,
-    # but it simplifies the functions as geting the response is done only in one place
-    params_hash = cache.generate_cache_key(params)
-    cache_key = f"{blockchain}.{method}.{params_hash}"
-    if cache_key not in cache_db or not cache.is_cache_enabled():
-        upstream_response = await node.make_request(data)
-        logger.debug(f"upstream status code {upstream_response.status_code}")
-        resp_data = upstream_response.json()
-
-        if cache.is_cacheable(method, params) and cache.is_cache_enabled():
-            if "error" not in resp_data and "result" in resp_data and resp_data["result"] is not None:
-                cache_db[cache_key] = ("result", resp_data["result"])
-            elif "error" in resp_data:
-                # These errors are "good ones", we want to cache the error because they should be invariant
-                # (don't depend on the node nor the time)
-                ERRORS_TO_CACHE = {-32000, -32015}
-                if resp_data["error"]["code"] in ERRORS_TO_CACHE:
-                    cache_db[cache_key] = ("error", resp_data["error"])
-        else:
-            logger.debug(f"Not caching '{method}' with params: '{params}'")
-
-        return resp_data
-    else:
-        key, data = cache_db[cache_key]
-        return {"jsonrpc": "2.0", "id": 11, key: data, "cached": True}
+async def make_request(node: UpstreamNode, data: dict):
+    upstream_response = await node.make_request(data)
+    logger.debug(f"upstream status code {upstream_response.status_code}")
+    resp_data = upstream_response.json()
+    return resp_data
