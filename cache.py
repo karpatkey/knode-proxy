@@ -53,6 +53,7 @@ def is_cacheable(method, params):
         "eth_getStorageAt",
         "eth_getBalance",
         "eth_getTransactionCount",
+        "eth_getBlockByNumber",
     }
     do_cache = False
     # TODO: take in consideration the other string blocks like "pending", "earliest"
