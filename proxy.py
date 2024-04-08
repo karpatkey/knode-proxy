@@ -2,7 +2,7 @@ import collections
 import json
 import logging
 import os
-
+from urllib.parse import urlparse
 
 import uvicorn
 from starlette.applications import Starlette
@@ -42,6 +42,7 @@ if AUTHORIZED_KEYS:
     AUTHORIZED_KEYS = AUTHORIZED_KEYS.split(",")
 
 debug_last_rpc_calls = collections.deque(maxlen=100)
+
 
 class QueryAuthBackend(AuthenticationBackend):
     async def authenticate(self, conn):
@@ -121,19 +122,38 @@ async def cache_clear(request: Request):
     cache.clear()
     return JSONResponse(content={"status": "ok"})
 
+
 @requires("authenticated")
 async def debug_rpc_calls(request: Request):
     return JSONResponse(content={"status": "ok", "data": list(debug_last_rpc_calls)})
 
+
+@requires("authenticated")
+async def debug_nodes(request: Request):
+    data = {}
+    for network, node_selector in ENDPOINTS.items():
+        data[network] = []
+        for node in node_selector.nodes:
+            url = urlparse(node.url)
+            data[network].append({"hostname": f"{url.hostname}", "status": node.status.name})
+
+    return JSONResponse(content={"status": "ok", "data": data})
+
+
+def setup_nodes(nodes):
+    for network, endpoints in nodes.items():
+        ENDPOINTS[network] = UpstreamNodeSelector([UpstreamNode(endpoint) for endpoint in endpoints])
+
+
 # Load nodes from the config
-for network, endpoints in config["nodes"].items():
-    ENDPOINTS[network] = UpstreamNodeSelector([UpstreamNode(endpoint) for endpoint in endpoints])
+setup_nodes(config["nodes"])
 
 routes = [
     Route("/status", endpoint=status, methods=["GET"]),
     Route("/chain/{blockchain}", endpoint=node_rpc, methods=["POST"]),
     Route("/cache/clear", endpoint=cache_clear, methods=["POST"]),
     Route("/debug/rpc_calls", endpoint=debug_rpc_calls, methods=["GET"]),
+    Route("/debug/nodes", endpoint=debug_nodes, methods=["GET"]),
 ]
 
 middleware = [
