@@ -3,6 +3,7 @@ import enum
 import itertools
 import logging
 import random
+import ssl
 import time
 
 import anyio
@@ -75,7 +76,7 @@ class UpstreamNode:
             start_time = time.monotonic()
             response = await self.client.post(self.url, json=data)
             metrics.upstream_latency_s.labels(upstream_node=self.url).observe(time.monotonic() - start_time)
-        except (httpx.HTTPError, anyio.EndOfStream) as exc:
+        except (httpx.HTTPError, anyio.EndOfStream, ssl.SSLError) as exc:
             self.status = NodeStatus.UNHEALTHY
             logger.warning(f"{repr(exc)} for {self}")
             raise NodeNotHealthy(f"{self} {exc}")
