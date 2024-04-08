@@ -13,6 +13,11 @@ logger = logging.getLogger()
 cache.cache_enable(False)
 
 
+def assert_needs_authentication(url):
+    response = httpx.get(url)
+    assert response.status_code == 403
+
+
 def test_get_balance_real_upstream(proxy_server):
     w3 = get_proxy_eth_node()
 
@@ -137,3 +142,19 @@ def test_upstream_node_selector():
     node_a.status = NodeStatus.HEALTHY
     assert selector.get_node() == node_a
     assert selector.get_node() == node_b
+
+
+def test_debug_nodes(proxy_server):
+    with patch.object(proxy, "ENDPOINTS", {}):
+        proxy.setup_nodes({"ethereum": ["https://my.node/eth"], "gnosis": {"http://gnosis/xxx?key=1"}})
+
+        response = httpx.get(PROXY_URL + "debug/nodes?key=test-user")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data == {
+        "ethereum": [{"hostname": "my.node", "status": "HEALTHY"}],
+        "gnosis": [{"hostname": "gnosis", "status": "HEALTHY"}],
+    }
+
+    assert_needs_authentication(PROXY_URL + "debug/nodes")
