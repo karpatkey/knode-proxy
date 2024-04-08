@@ -144,6 +144,36 @@ def test_upstream_node_selector():
     assert selector.get_node() == node_b
 
 
+def test_debug_rpc_calls(proxy_server, fake_upstream):
+    w3 = get_proxy_eth_node()
+    fake_upstream.add_responses(
+        [
+            ({"jsonrpc": "2.0", "id": 1, "result": "0x123"}, 200),
+        ]
+    )
+
+    proxy.debug_last_rpc_calls.clear()
+
+    balance = w3.eth.get_balance("0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693", block_identifier=19342871)
+    response = httpx.get(PROXY_URL + "debug/rpc_calls?key=test-user")
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data == [
+        {
+            "req": {
+                "jsonrpc": "2.0",
+                "method": "eth_getBalance",
+                "params": ["0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693", "0x1272617"],
+                "id": 0,
+            },
+            "resp": {"jsonrpc": "2.0", "id": 1, "result": "0x123"},
+            "cached": False,
+        }
+    ]
+
+    assert_needs_authentication(PROXY_URL + "debug/rpc_calls")
+
+
 def test_debug_nodes(proxy_server):
     with patch.object(proxy, "ENDPOINTS", {}):
         proxy.setup_nodes({"ethereum": ["https://my.node/eth"], "gnosis": {"http://gnosis/xxx?key=1"}})
