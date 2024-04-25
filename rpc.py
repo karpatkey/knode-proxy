@@ -72,7 +72,7 @@ class UpstreamNode:
 
     async def make_request(self, data: dict) -> httpx.Response:
         metrics.upstream_requests_total.labels(upstream_node=self.url, rpc_method=data.get("method", "unknown")).inc()
-
+        metrics.upstream_requests_concurrent.labels(upstream_node=self.url).inc()
         error = None
         try:
             start_time = time.monotonic()
@@ -80,8 +80,10 @@ class UpstreamNode:
             metrics.upstream_latency_s.labels(upstream_node=self.url).observe(time.monotonic() - start_time)
             if response.status_code != 200:
                 error = f"{self} returned status code == {response.status_code}"
-        except (httpx.HTTPError, anyio.EndOfStream, ssl.SSLError) as exc:
-            error = f"{repr(exc)} for {self}"
+        except (httpx.HTTPError, anyio.EndOfStream, ssl.SSLError, Exception) as exc:
+            error = f"Exception found on {self}.make_request: {repr(exc)}"
+
+        metrics.upstream_requests_concurrent.labels(upstream_node=self.url).dec()
 
         if error:
             self.set_status(NodeStatus.UNHEALTHY)

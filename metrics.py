@@ -39,6 +39,12 @@ upstream_state = Gauge(
     labelnames=["upstream_node"]
 )
 
+upstream_requests_concurrent = Gauge(
+    name="upstream_requests_concurrent",
+    documentation="The amount of requests that the upstream is serving",
+    labelnames=["upstream_node"]
+)
+
 class MonitoringMiddleware:
     def __init__(self, app):
         self.app = app
