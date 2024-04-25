@@ -2,6 +2,7 @@ import asyncio
 import enum
 import itertools
 import logging
+import os
 import random
 import ssl
 import time
@@ -9,18 +10,15 @@ import time
 import anyio
 import httpx
 
-import cache
-from cache import cache as cache_db
 import metrics
 
 logger = logging.getLogger("rpc")
 
 MAX_UPSTREAM_TRIES_FOR_REQUEST = 5
-MAX_HTTP_CONNECTIONS = 10
-MAX_KEEPALIVE_CONNECTIONS = 10
+MAX_HTTP_CONNECTIONS = int(os.environ.get("KPROXY_NODE_MAX_CONNECTIONS", 20))
 
 ENDPOINTS: dict[str, "UpstreamNodeSelector"] = {}
-HTTPX_LIMITS = httpx.Limits(max_keepalive_connections=MAX_HTTP_CONNECTIONS, max_connections=MAX_KEEPALIVE_CONNECTIONS)
+HTTPX_LIMITS = httpx.Limits(max_keepalive_connections=MAX_HTTP_CONNECTIONS, max_connections=MAX_HTTP_CONNECTIONS)
 
 
 class NodeNotHealthy(Exception):
