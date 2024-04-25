@@ -55,7 +55,7 @@ class MonitoringMiddleware:
             duration = time.monotonic() - start_time
             http_request_duration_s.observe(duration)
             if "rpc" in scope["metrics_ctx"]:
-                status = str(scope["metrics_ctx"].get("error", 200))
+                status = str(scope["metrics_ctx"].get("error", "200"))
                 blockchain = scope["metrics_ctx"].get("blockchain")
                 cached = scope["metrics_ctx"].get("cached")
                 method = scope["metrics_ctx"].get("method")
@@ -64,5 +64,5 @@ class MonitoringMiddleware:
                                           blockchain=blockchain,
                                           cached=cached).inc()
 
-                if status != 200:
+                if status != "200":
                     http_errors_total.inc()
