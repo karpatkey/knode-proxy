@@ -49,6 +49,10 @@ class UpstreamNode:
         except RuntimeError:
             pass
 
+    def set_status(self, status: NodeStatus):
+        self.status = status
+        metrics.upstream_state.labels(upstream_node=self.url).set(status.value)
+
     def __str__(self) -> str:
         return f"UpstreamNode({self.url})"
 
@@ -61,7 +65,6 @@ class UpstreamNode:
             "params": ["0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693", hex(block)],
             "id": 0x43A174,
         }
-        start = time.monotonic()
         try:
             await self.make_request(data)
         except Exception:
@@ -70,21 +73,23 @@ class UpstreamNode:
     async def make_request(self, data: dict) -> httpx.Response:
         metrics.upstream_requests_total.labels(upstream_node=self.url, rpc_method=data.get("method", "unknown")).inc()
 
+        error = None
         try:
             start_time = time.monotonic()
             response = await self.client.post(self.url, json=data)
             metrics.upstream_latency_s.labels(upstream_node=self.url).observe(time.monotonic() - start_time)
+            if response.status_code != 200:
+                error = f"{self} returned status code == {response.status_code}"
         except (httpx.HTTPError, anyio.EndOfStream, ssl.SSLError) as exc:
-            self.status = NodeStatus.UNHEALTHY
-            logger.warning(f"{repr(exc)} for {self}")
-            raise NodeNotHealthy(f"{self} {exc}")
+            error = f"{repr(exc)} for {self}"
 
-        if response.status_code != 200:
-            self.status = NodeStatus.UNHEALTHY
-            logger.warning(f"status code {response.status_code} != 200 for {self}")
-            raise NodeNotHealthy(f"{self} returned status code == {response.status_code}")
+        if error:
+            self.set_status(NodeStatus.UNHEALTHY)
+            logger.warning(error)
+            raise NodeNotHealthy(error)
         else:
-            self.status = NodeStatus.HEALTHY
+            self.set_status(NodeStatus.HEALTHY)
+
         return response
 
 

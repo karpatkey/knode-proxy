@@ -1,6 +1,6 @@
 import time
 
-from prometheus_client import Counter, Histogram, start_http_server
+from prometheus_client import Counter, Histogram, Gauge, start_http_server
 
 rpc_requests_total = Counter(
     "rpc_requests_total",
@@ -33,6 +33,11 @@ upstream_errors_total = Counter(
     labelnames=["upstream_node"]
 )
 
+upstream_state = Gauge(
+    name="upstream_status",
+    documentation="The status HEALTHY=1, UNHEALTHY=2",
+    labelnames=["upstream_node"]
+)
 
 class MonitoringMiddleware:
     def __init__(self, app):
