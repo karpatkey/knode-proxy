@@ -1,6 +1,6 @@
 import time
 
-from prometheus_client import Counter, Histogram, start_http_server
+from prometheus_client import Counter, Histogram, Gauge, start_http_server
 
 rpc_requests_total = Counter(
     "rpc_requests_total",
@@ -33,6 +33,17 @@ upstream_errors_total = Counter(
     labelnames=["upstream_node"]
 )
 
+upstream_state = Gauge(
+    name="upstream_status",
+    documentation="The status HEALTHY=1, UNHEALTHY=2",
+    labelnames=["upstream_node"]
+)
+
+upstream_requests_concurrent = Gauge(
+    name="upstream_requests_concurrent",
+    documentation="The amount of requests that the upstream is serving",
+    labelnames=["upstream_node"]
+)
 
 class MonitoringMiddleware:
     def __init__(self, app):
@@ -50,7 +61,7 @@ class MonitoringMiddleware:
             duration = time.monotonic() - start_time
             http_request_duration_s.observe(duration)
             if "rpc" in scope["metrics_ctx"]:
-                status = str(scope["metrics_ctx"].get("error", 200))
+                status = str(scope["metrics_ctx"].get("error", "200"))
                 blockchain = scope["metrics_ctx"].get("blockchain")
                 cached = scope["metrics_ctx"].get("cached")
                 method = scope["metrics_ctx"].get("method")
@@ -59,5 +70,5 @@ class MonitoringMiddleware:
                                           blockchain=blockchain,
                                           cached=cached).inc()
 
-                if status != 200:
+                if status != "200":
                     http_errors_total.inc()
