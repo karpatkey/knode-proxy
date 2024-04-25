@@ -45,6 +45,11 @@ When deploying with docker take care to use a volume so the cache is not lost on
 * `KPROXY_CACHE_DISABLE` to entirely disable the cache.
 * `KPROXY_CACHE_SIZE_MB` to set the max size of the cache, defaults to 250MB.
 
+### Max connections per upstream
+
+The env var `KPROXY_NODE_MAX_CONNECTIONS` configures the maximum concurrent connections per
+upstream node.
+
 ### Metrics
 
 A prometheus http server with metrics will listen in `http://${HOST}:9999`
