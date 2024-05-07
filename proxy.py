@@ -24,6 +24,7 @@ from rpc import (
     NodeNotHealthy,
     UpstreamNodeSelector,
     UpstreamNode,
+    on_startup
 )
 
 logger = logging.getLogger("proxy")
@@ -161,7 +162,7 @@ middleware = [
     Middleware(metrics.MonitoringMiddleware),
 ]
 
-app = Starlette(routes=routes, middleware=middleware)
+app = Starlette(routes=routes, middleware=middleware, on_startup=on_startup)
 
 if __name__ == "__main__":
     if not AUTHORIZED_KEYS:
@@ -194,6 +195,11 @@ if __name__ == "__main__":
                 "propagate": True,
             },
             "proxy": {
+                "level": "INFO",
+                "handlers": ["default"],
+                "propagate": False,
+            },
+            "rpc": {
                 "level": "INFO",
                 "handlers": ["default"],
                 "propagate": False,
