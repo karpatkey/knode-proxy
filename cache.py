@@ -3,6 +3,7 @@ import hashlib
 import logging
 import numbers
 import os
+import sqlite3
 from types import NoneType
 
 import diskcache
@@ -111,15 +112,18 @@ def get_rpc_response_from_cache(cache_key):
 
 
 def set_rpc_response_to_cache(resp_data, cache_key, method, params):
-    if is_cache_enabled() and is_cacheable(method, params):
-        if "error" not in resp_data and "result" in resp_data and resp_data["result"] is not None:
-            cache[cache_key] = ("result", resp_data["result"])
-        elif "error" in resp_data:
-            # These errors are "good ones", we want to cache the error because they should be invariant
-            # (don't depend on the node nor the time)
-            ERRORS_TO_CACHE = {-32000, -32015}
-            if resp_data["error"]["code"] in ERRORS_TO_CACHE:
-                cache[cache_key] = ("error", resp_data["error"])
+    try:
+        if is_cache_enabled() and is_cacheable(method, params):
+            if "error" not in resp_data and "result" in resp_data and resp_data["result"] is not None:
+                cache[cache_key] = ("result", resp_data["result"])
+            elif "error" in resp_data:
+                # These errors are "good ones", we want to cache the error because they should be invariant
+                # (don't depend on the node nor the time)
+                ERRORS_TO_CACHE = {-32000, -32015}
+                if resp_data["error"]["code"] in ERRORS_TO_CACHE:
+                    cache[cache_key] = ("error", resp_data["error"])
+    except sqlite3.OperationalError:
+        logger.exception("Can't store value to cache")
 
 
 def clear():
