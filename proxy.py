@@ -92,6 +92,8 @@ async def node_rpc(request: Request):
         set_metric_ctx(request, key="cached", value=True)
         cached_data["id"] = request_data["id"]
         debug_last_rpc_calls.append({"req": request_data, "resp": cached_data, "cached": True})
+        logger.info(f"Request for '{chain}' to cache, with data: {request_data!s:.100}")
+        logger.info(f"Response for '{chain}' with data: {cached_data!s:.100}")
         return JSONResponse(content=cached_data)
 
     for try_count in range(1, MAX_UPSTREAM_TRIES_FOR_REQUEST + 1):

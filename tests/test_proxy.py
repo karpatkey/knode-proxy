@@ -105,7 +105,7 @@ def test_cache_chain_id(proxy_server, fake_upstream, cache_enabled):
     assert w3.eth.chain_id == 1
 
     # If cache does not work then the assert will fail
-    # as there is only one fale response
+    # as there is only one fake response
     assert w3.eth.chain_id == 1
 
 
@@ -189,7 +189,7 @@ def test_debug_nodes(proxy_server):
 
     assert_needs_authentication(PROXY_URL + "debug/nodes")
 
-def test_bad_upstream_response(proxy_server, fake_upstream, cache_enabled):
+def test_bad_upstream_response(proxy_server, fake_upstream):
     # check https://github.com/karpatkey/knode-proxy/issues/24
     w3 = get_proxy_eth_node()
 
@@ -211,8 +211,24 @@ def test_bad_upstream_response(proxy_server, fake_upstream, cache_enabled):
     assert response.json()['result'] == "good"
 
 
-def test_bad_upstream_response_give_up(proxy_server, fake_upstream, cache_enabled):
-    w3 = get_proxy_eth_node()
+def test_bad_upstream_response_give_up(proxy_server, fake_upstream):
+    responses = [({"jsonrpc": "2.0", "id": 1, "result": "0x"}, 200)] * proxy.MAX_UPSTREAM_TRIES_FOR_REQUEST
+    fake_upstream.add_responses(responses)
+
+    response = httpx.post(
+        PROXY_URL + "chain/ethereum?key=test-user",
+        json={
+            "jsonrpc": "2.0",
+            "method": "eth_getBalance",
+            "params": ["0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693", "0x1272619"],
+            "id": "1",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()['result'] == "0x"
+
+def test_no_cache(proxy_server, fake_upstream):
 
     responses = [({"jsonrpc": "2.0", "id": 1, "result": "0x"}, 200)] * proxy.MAX_UPSTREAM_TRIES_FOR_REQUEST
     fake_upstream.add_responses(responses)
