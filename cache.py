@@ -24,6 +24,8 @@ cache = diskcache.Cache(
 
 _cache_enabled = not os.getenv("KPROXY_CACHE_DISABLE")
 
+PREDEFINED_BLOCK_PARAMS = {"latest", "safe", "earliest", "pending", "finalized"}
+
 
 def is_cache_enabled():
     return _cache_enabled
@@ -55,10 +57,26 @@ def is_cacheable(method, params):
         "eth_getTransactionCount",
         "eth_getBlockByNumber",
     }
+    RPC_WITH_BLOCK_NUMBER_IN_LAST_ARG = {
+        "eth_call",
+        "eth_getTransactionReceipt",
+        "eth_getCode",
+        "eth_getStorageAt",
+        "eth_getBalance",
+        "eth_getTransactionCount",
+        "eth_getBlockByNumber",
+    }
+
     do_cache = False
-    # TODO: take in consideration the other string blocks like "pending", "earliest"
-    if method in RPC_WHITELIST and "latest" not in params:
-        do_cache = True
+    if method in RPC_WHITELIST:
+        if method in RPC_WITH_BLOCK_NUMBER_IN_LAST_ARG and params[-1] in PREDEFINED_BLOCK_PARAMS:
+            pass
+        elif method == "eth_getLogs" and (params[0] in PREDEFINED_BLOCK_PARAMS or params[1] in PREDEFINED_BLOCK_PARAMS):
+            pass
+        elif method == "eth_getBlockByNumber" and params[0] in PREDEFINED_BLOCK_PARAMS:
+            pass
+        else:
+            do_cache = True
     if method in {"eth_chainId", "eth_getCode"}:  # TODO: eth_getCode may change for the same block?
         do_cache = True
     return do_cache
