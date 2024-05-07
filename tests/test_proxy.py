@@ -189,6 +189,7 @@ def test_debug_nodes(proxy_server):
 
     assert_needs_authentication(PROXY_URL + "debug/nodes")
 
+
 def test_bad_upstream_response(proxy_server, fake_upstream):
     # check https://github.com/karpatkey/knode-proxy/issues/24
     w3 = get_proxy_eth_node()
@@ -208,7 +209,7 @@ def test_bad_upstream_response(proxy_server, fake_upstream):
     )
 
     assert response.status_code == 200
-    assert response.json()['result'] == "good"
+    assert response.json()["result"] == "good"
 
 
 def test_bad_upstream_response_give_up(proxy_server, fake_upstream):
@@ -226,22 +227,30 @@ def test_bad_upstream_response_give_up(proxy_server, fake_upstream):
     )
 
     assert response.status_code == 200
-    assert response.json()['result'] == "0x"
+    assert response.json()["result"] == "0x"
 
-def test_no_cache(proxy_server, fake_upstream):
 
-    responses = [({"jsonrpc": "2.0", "id": 1, "result": "0x"}, 200)] * proxy.MAX_UPSTREAM_TRIES_FOR_REQUEST
+def test_no_cache(proxy_server, fake_upstream, cache_enabled):
+    responses = [({"jsonrpc": "2.0", "id": 1, "result": "0x1"}, 200)] * 2
     fake_upstream.add_responses(responses)
 
-    response = httpx.post(
-        PROXY_URL + "chain/ethereum?key=test-user",
-        json={
-            "jsonrpc": "2.0",
-            "method": "eth_getBalance",
-            "params": ["0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693", "0x1272619"],
-            "id": "1",
-        },
-    )
+    def get_chain_id():
+        return httpx.post(
+            PROXY_URL + "chain/ethereum?key=test-user&no-cache",
+            json={
+                "jsonrpc": "2.0",
+                "method": "eth_chainId",
+                "params": [],
+                "id": "1",
+            },
+        )
 
+    response = get_chain_id()
     assert response.status_code == 200
-    assert response.json()['result'] == "0x"
+    assert response.json()["result"] == "0x1"
+    assert fake_upstream.fake_data_q.qsize() == 1
+
+    response = get_chain_id()
+    assert response.status_code == 200
+    assert response.json()["result"] == "0x1"
+    assert fake_upstream.fake_data_q.qsize() == 0

@@ -113,7 +113,8 @@ async def node_rpc(request: Request):
         else:
             logger.info("Upstream node answer was '0x', give up retrying as the answer may be accurate.")
 
-        cache.set_rpc_response_to_cache(upstream_data, cache_key, method, params)
+        if "no-cache" not in request.query_params:
+            cache.set_rpc_response_to_cache(upstream_data, cache_key, method, params)
 
         logger.info(f"Response for '{chain}' with data: {upstream_data!s:.100}")
         set_metric_ctx(request, key="upstream_tries", value=try_count)
