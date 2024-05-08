@@ -20,6 +20,7 @@ MAX_HTTP_CONNECTIONS = int(os.environ.get("KPROXY_NODE_MAX_CONNECTIONS", 20))
 ENDPOINTS: dict[str, "UpstreamNodeSelector"] = {}
 HTTPX_LIMITS = httpx.Limits(max_keepalive_connections=MAX_HTTP_CONNECTIONS, max_connections=MAX_HTTP_CONNECTIONS)
 
+on_startup = []
 
 class NodeNotHealthy(Exception):
     pass
@@ -37,17 +38,16 @@ class UpstreamNode:
         self.url = url
         self.client = httpx.AsyncClient(limits=HTTPX_LIMITS)
         self.status: NodeStatus = NodeStatus.HEALTHY
+        on_startup.append(self.start)
 
-        async def check_loop():
-            while True:
-                await anyio.sleep(self.HEALTH_CHECK_INTERVAL_S + random.random() * self.HEALTH_CHECK_INTERVAL_S / 2)
-                await self.health_check()
+    async def check_loop(self):
+        while True:
+            await anyio.sleep(self.HEALTH_CHECK_INTERVAL_S + random.random() * self.HEALTH_CHECK_INTERVAL_S / 2)
+            logger.info("Checking health of %s", self)
+            await self.health_check()
 
-        try:
-            asyncio.get_running_loop()
-            asyncio.create_task(check_loop())
-        except RuntimeError:
-            pass
+    def start(self):
+        asyncio.create_task(self.check_loop())
 
     def set_status(self, status: NodeStatus):
         self.status = status
@@ -68,7 +68,7 @@ class UpstreamNode:
         try:
             await self.make_request(data)
         except Exception:
-            pass
+            logger.exception("health checking error")
 
     async def make_request(self, data: dict) -> httpx.Response:
         metrics.upstream_requests_total.labels(upstream_node=self.url, rpc_method=data.get("method", "unknown")).inc()

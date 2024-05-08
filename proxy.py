@@ -24,6 +24,7 @@ from rpc import (
     NodeNotHealthy,
     UpstreamNodeSelector,
     UpstreamNode,
+    on_startup
 )
 
 logger = logging.getLogger("proxy")
@@ -91,9 +92,11 @@ async def node_rpc(request: Request):
         set_metric_ctx(request, key="cached", value=True)
         cached_data["id"] = request_data["id"]
         debug_last_rpc_calls.append({"req": request_data, "resp": cached_data, "cached": True})
+        logger.info(f"Request for '{chain}' to cache, with data: {request_data!s:.100}")
+        logger.info(f"Response for '{chain}' with data: {cached_data!s:.100}")
         return JSONResponse(content=cached_data)
 
-    for try_count in range(MAX_UPSTREAM_TRIES_FOR_REQUEST):
+    for try_count in range(1, MAX_UPSTREAM_TRIES_FOR_REQUEST + 1):
         node = get_upstream_node_for_blockchain(chain)
         logger.info(f"Request for '{chain}' to {node.url}, try {try_count}, with data: {request_data!s:.100}")
         try:
@@ -101,10 +104,20 @@ async def node_rpc(request: Request):
         except NodeNotHealthy:
             continue
 
-        cache.set_rpc_response_to_cache(upstream_data, cache_key, method, params)
+        # Some nodes return "0x" instead of an "Invalid block error". The idea is to retry
+        # with other nodes but return the value if all answers are equal
+        # see https://github.com/karpatkey/knode-proxy/issues/24
+        if upstream_data["result"] == "0x" and try_count < MAX_UPSTREAM_TRIES_FOR_REQUEST:
+            logger.info("Upstream node answer was '0x', retrying with other upstream.")
+            continue
+        else:
+            logger.info("Upstream node answer was '0x', give up retrying as the answer may be accurate.")
+
+        if "no-cache" not in request.query_params:
+            cache.set_rpc_response_to_cache(upstream_data, cache_key, method, params)
 
         logger.info(f"Response for '{chain}' with data: {upstream_data!s:.100}")
-        set_metric_ctx(request, key="upstream_tries", value=try_count + 1)
+        set_metric_ctx(request, key="upstream_tries", value=try_count)
         set_metric_ctx(request, key="cached", value=False)
         debug_last_rpc_calls.append({"req": request_data, "resp": upstream_data, "cached": False})
         return JSONResponse(content=upstream_data)
@@ -161,7 +174,7 @@ middleware = [
     Middleware(metrics.MonitoringMiddleware),
 ]
 
-app = Starlette(routes=routes, middleware=middleware)
+app = Starlette(routes=routes, middleware=middleware, on_startup=on_startup)
 
 if __name__ == "__main__":
     if not AUTHORIZED_KEYS:
@@ -194,6 +207,11 @@ if __name__ == "__main__":
                 "propagate": True,
             },
             "proxy": {
+                "level": "INFO",
+                "handlers": ["default"],
+                "propagate": False,
+            },
+            "rpc": {
                 "level": "INFO",
                 "handlers": ["default"],
                 "propagate": False,
