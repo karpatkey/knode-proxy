@@ -254,3 +254,24 @@ def test_no_cache(proxy_server, fake_upstream, cache_enabled):
     assert response.status_code == 200
     assert response.json()["result"] == "0x1"
     assert fake_upstream.fake_data_q.qsize() == 0
+
+
+def test_with_fake_node_error_with_status_200(proxy_server, fake_upstream):
+    req_id = 22
+    fake_upstream.set_default_response(
+        {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32003, "message": "Transaction rejected"}}, 200
+    )
+
+    response = httpx.post(
+        PROXY_URL + "chain/ethereum?key=test-user",
+        json={
+            "jsonrpc": "2.0",
+            "method": "eth_getBalance",
+            "params": ["0x6CF63938f2CD5DFEBbDE0010bb640ed7Fa679693", "0x1272619"],
+            "id": req_id,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["error"]["code"] == -32003
+    assert response.json()["id"] == req_id

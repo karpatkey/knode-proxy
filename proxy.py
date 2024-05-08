@@ -107,11 +107,12 @@ async def node_rpc(request: Request):
         # Some nodes return "0x" instead of an "Invalid block error". The idea is to retry
         # with other nodes but return the value if all answers are equal
         # see https://github.com/karpatkey/knode-proxy/issues/24
-        if upstream_data["result"] == "0x" and try_count < MAX_UPSTREAM_TRIES_FOR_REQUEST:
-            logger.info("Upstream node answer was '0x', retrying with other upstream.")
-            continue
-        else:
-            logger.info("Upstream node answer was '0x', give up retrying as the answer may be accurate.")
+        if "result" in upstream_data and upstream_data["result"] == "0x":
+            if try_count < MAX_UPSTREAM_TRIES_FOR_REQUEST:
+                logger.info("Upstream node answer was '0x', retrying with next upstream.")
+                continue
+            else:
+                logger.info("Upstream node answer was '0x', give up retrying as the answer may be accurate.")
 
         if "no-cache" not in request.query_params:
             cache.set_rpc_response_to_cache(upstream_data, cache_key, method, params)
