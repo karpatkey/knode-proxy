@@ -72,7 +72,7 @@ def is_cacheable(method, params):
     if method in RPC_WHITELIST:
         if method in RPC_WITH_BLOCK_NUMBER_IN_LAST_ARG and params[-1] in PREDEFINED_BLOCK_PARAMS:
             pass
-        elif method == "eth_getLogs" and (params[0] in PREDEFINED_BLOCK_PARAMS or params[1] in PREDEFINED_BLOCK_PARAMS):
+        elif method == "eth_getLogs" and (params[0]["fromBlock"] in PREDEFINED_BLOCK_PARAMS or params[0]["toBlock"] in PREDEFINED_BLOCK_PARAMS):
             pass
         elif method == "eth_getBlockByNumber" and params[0] in PREDEFINED_BLOCK_PARAMS:
             pass
