@@ -275,3 +275,8 @@ def test_with_fake_node_error_with_status_200(proxy_server, fake_upstream):
     assert response.status_code == 200
     assert response.json()["error"]["code"] == -32003
     assert response.json()["id"] == req_id
+
+def test_get_logs(proxy_server, cache_enabled):
+    w3 = get_proxy_eth_node()
+    logs = w3.eth.get_logs({"fromBlock": 0, "toBlock": 1000, "address": "0x3C9916BB9498f637e2Fa86C2028e26275Dc9A631"})
+    assert logs == []
